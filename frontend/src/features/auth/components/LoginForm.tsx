@@ -53,6 +53,9 @@ export default function LoginForm() {
       }
 
       router.push("/projects");
+      setLoading(false);
+      setEmail("");
+      setPassword("");
     } catch (error) {
       console.error("Sign in error:", error);
       setError("Terjadi kesalahan. Silakan coba lagi.");
