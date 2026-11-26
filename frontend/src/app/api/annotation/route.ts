@@ -81,7 +81,7 @@ export async function GET(
     request: NextRequest
 ){
     try {
-        const searchParams = await request.nextUrl.searchParams;
+        const searchParams = request.nextUrl.searchParams;
         const sessionId = searchParams.get("sessionId");
         const supabase = await createServerSupabaseClient();
         const { data: { user }, error} = await supabase.auth.getUser();
