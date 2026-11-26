@@ -78,8 +78,8 @@ export interface BrainstormingSessionApiResponse {
     updatedAt?: string | null;
     createdAt: string;
     _count?: {
-        articles?: number;
-        chatMessages?: number;
+        Article?: number;
+        ChatMessage?: number;
     };
 }
 

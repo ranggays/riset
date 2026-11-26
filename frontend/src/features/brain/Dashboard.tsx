@@ -106,7 +106,6 @@ export default function Dashboard() {
   const [graphKey, setGraphKey] = useState(0);
   const graphContainerRef = useRef<HTMLDivElement>(null);
 
-  const [isCleaningUp, setIsCleaningUp] = useState(false);
   const [previousGraph, setPreviousGraph] = useState<'visjs' | 'neovisjs'>('visjs');
   const [uploadModalOpened, setUploadModalOpened] = useState(false);
   const [uploadForm, setUploadForm] = useState({
@@ -137,235 +136,7 @@ export default function Dashboard() {
 
   const [currentUploadId, setCurrentUploadId] = useState<string | null>(null);
 
-  //webgazer
-  const [isTracking, setIsTracking] = useState(false);
-  const gazeDataRef = useRef<{x: number; y: number; timestamp:number} []>([]);
-  const intervalIdRef = useRef<NodeJS.Timeout | null>(null);
-
-  //perekaman
-  const [isRecording, setIsRecording] = useState<boolean>(false)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const recordedChunksRef = useRef<Blob[]>([]);
-  const screenStreamRef = useRef<MediaStream | null>(null);
-
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-  const videoPreviewRef = useRef<HTMLVideoElement>(null);
-
-  const captureScreenshot = async (): Promise<string | null> => {
-    if (!screenStreamRef.current || !screenStreamRef.current.active){
-      console.warn('Screen stream is not active, cannot capture screenshot');
-      return null;
-    }
-
-    try {
-      const videoTrack = screenStreamRef.current.getVideoTracks()[0];
-      const imageCapture = new ImageCapture(videoTrack);
-      const imageBitmap = await (imageCapture as any).grabFrame();
-
-      const canvas = document.createElement('canvas');
-      canvas.width = imageBitmap.width;
-      canvas.height = imageBitmap.height;
-      const ctx = canvas.getContext('2d');
-
-      if (ctx){
-        ctx.drawImage(imageBitmap, 0, 0);
-        return canvas.toDataURL('image/jpeg', 0.7);
-      }
-      return null;
-    } catch (error) {
-      console.error("Error capturing screenshot:", error);
-      return null;
-    }
-  }
-
-  const startRecording = async () => {
-    try {
-      
-      const camStream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: false,
-      });
-      setCameraStream(camStream);
-
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: false,
-      });
-
-
-      screenStreamRef.current = stream;
-      recordedChunksRef.current = [];
-
-      //instance mediarecorder
-      const recorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = recorder;
-
-      //atur handler saat ada rekaman
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0){
-          recordedChunksRef.current.push(event.data);
-        }
-      };
-
-      //atur handler saat stop rekaman
-      recorder.onstop = () => {
-        const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
-        const url = URL.createObjectURL(blob);
-
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `session-recording-${Date.now()}.webm`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      };
-
-      recorder.start();
-      setIsRecording(true);
-      console.log('Screen recording started');
-    } catch (error) {
-      console.error("Error starting screen recording:", error);
-      if (cameraStream){
-        cameraStream.getTracks().forEach(track => track.stop());
-        setCameraStream(null);
-      }
-      console.error("Gagal memulai sesi:", error);
-      notifications.show({
-          title: 'Perekaman Gagal',
-          message: 'Izin untuk merekam layar ditolak atau terjadi error.',
-          color: 'red',
-      });
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording'){
-      mediaRecorderRef.current.stop();
-    }
-    if (screenStreamRef.current){
-      screenStreamRef.current.getTracks().forEach(track => track.stop());
-      screenStreamRef.current = null;
-    }
-
-    if (cameraStream){
-      cameraStream.getTracks().forEach(track => track.stop());
-      setCameraStream(null);
-    }
-
-    setIsRecording(false);
-    console.log('Screen recording stopped');
-  }
-
-  const sendGazeData = async () => {
-    if (gazeDataRef.current.length === 0){
-      return;
-    }
-
-    const dataToSend = [...gazeDataRef.current];
-    gazeDataRef.current = [];
-
-    const screenshotDataUrl = await captureScreenshot();
-    
-    try {
-      await fetch('/api/track-gaze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
-          sessionId: sessionId,
-          gazeData: dataToSend,
-          screenshot: screenshotDataUrl,
-        }),
-      });
-      console.log(`Sent ${dataToSend} gaze points`);
-    } catch (error) {
-      console.error('Failed to send gaze data:', error);
-      gazeDataRef.current.unshift(...dataToSend);
-    }
-  };
-
-  const startEyeTracking = async () =>{
-    // try {
-    //   await navigator.mediaDevices.getUserMedia({video: true});
-    // } catch (error) {
-    //   notifications.show({
-    //     title: 'Akses Kamera Ditolak',
-    //     message: 'Mohon izinkan akses kamera di pengaturan browser untuk fitur ini.',
-    //     color: 'yellow',
-    //     position: 'top-right',
-    //   })
-    //   return;
-    // }
-
-    // const webgazer = (await import('webgazer')).default;
-
-    // await webgazer.begin();
-    // webgazer.setGazeListener((data, elapsedTime) => {
-    //   if (data){
-    //     gazeDataRef.current.push({
-    //       x: data.x,
-    //       y: data.y,
-    //       timestamp: Date.now(),
-    //     });
-    //   }
-    // });
-    // webgazer.showPredictionPoints(true);
-    // webgazer.showVideo(false);
-
-
-    setIsTracking(true);
-    notifications.show({
-        title: 'Pelacakan Mata Aktif',
-        message: 'Kamera telah diaktifkan untuk melacak pandangan Anda.',
-        color: 'green',
-        position: 'top-right',
-    });
-  };
-
-//   const stopEyeTracking = async () => {
-//     const webgazer = (await import('webgazer')).default;
-//     webgazer.end();
-//     setIsTracking(false);
-
-//     await sendGazeData();
-
-//     notifications.show({
-//         title: 'Pelacakan Mata Dihentikan',
-//         message: 'Kamera telah dinonaktifkan.',
-//         color: 'blue',
-//         position: 'top-right',
-//     });
-//   };
-
-  useEffect(() => {
-    if (isTracking){
-      intervalIdRef.current = setInterval(sendGazeData, 5000);
-    }
-
-    return () => {
-      if (intervalIdRef.current){
-        clearInterval(intervalIdRef.current);
-      }
-    };
-  }, [isTracking]);
-  
-  const startSession = async () => {
-    await startEyeTracking();
-    await startRecording();
-  };
-
-  const stopSession = async () => {
-    // stopEyeTracking();
-    stopRecording();
-  }
-  
-  const contextValue = {
-    isSessionActive: isTracking || isRecording,
-    startSession,
-    stopSession,
-  };
 
   const VideoPreview = ({stream}: {stream: MediaStream | null}) => {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -610,26 +381,6 @@ export default function Dashboard() {
     setResetChatContext(false);
   }
 
-  const fetchNeo4jData = async () => {
-    try {
-      const articleIdsParam = activeArticles.length > 0 ? `&articleIds=${activeArticles.join(',')}` : '';
-      const res = await fetch(`/api/neo4j/query?sessionId=${sessionId}${articleIdsParam}`);
-
-      if (res.ok){
-        const data = await res.json();
-        setNeo4jData(data);
-      }
-    } catch (error) {
-      console.error('Error fetching Neo4j data:', error);
-    }
-  };
-
-  useEffect(() => {
-    if (graph === 'neovisjs' && sessionId && !isLoadingSession && !isLoadingData) {
-      fetchNeo4jData();
-    }
-  }, [graph, activeArticles, sessionId, isLoadingSession, isLoadingData]);
-
   const cleanupNavigationButtons = useCallback(() => {
   const navigationSelectors = [
     '.neovis-navigation',
@@ -698,7 +449,6 @@ export default function Dashboard() {
     }
   });
 
-  
     const cleanupAttempts = [100, 300, 500, 1000];
 
     cleanupAttempts.forEach(delay => {
@@ -1287,14 +1037,6 @@ export default function Dashboard() {
                             checked={activeRelations.includes(relation)}
                             onChange={(event) => 
                                 handleRelationChange(relation, event.currentTarget.checked)
-                                /*
-                                if (event.currentTarget.checked) {
-                                setActiveRelations([...activeRelations, relation]);
-                                } else {
-                                setActiveRelations(activeRelations.filter(r => r !== relation));
-                                }
-                                */
-                                
                             }
                             styles={{
                                 input: { cursor: 'pointer' },
@@ -1342,28 +1084,6 @@ export default function Dashboard() {
                         minWidth: 120
                         }}
                     >
-                        {/* <Select
-                        value={graph}
-                        onChange={(value) => {
-                            if (value) {
-                            handleGraphTypeChange(value as 'visjs' | 'neovisjs');
-                            }}
-                        }
-                        data={[
-                            { value: 'visjs', label: 'Vis.js' },
-                            { value: 'neovisjs', label: 'Neo4j' },
-                        ]}
-                        size="sm"
-                        radius="md"
-                        withCheckIcon={false}
-                        styles={{
-                            input: {
-                            backgroundColor: dark ? theme.colors.dark[6] : 'white',
-                            border: `1px solid ${dark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
-                            fontSize: theme.fontSizes.sm,
-                            }
-                        }}
-                        /> */}
                     </Box>
     
                     {/* Graph Container */}
@@ -1374,17 +1094,10 @@ export default function Dashboard() {
                             edges={filteredEdges}
                             onNodeClick={handleNodeClick}
                             onEdgeClick={handleEdgeClick}
-                            // key={`visjs-${graphKey}-${filteredNodes.length}-${filteredEdges.length}`}
                             key ={`${fullPath}-visjs-${graphKey}`}
                         />
                     </Box>
                     </Box>
-                    /* <NetworkGraph
-                        nodes={filteredNodes}
-                        edges={filteredEdges}
-                        onNodeClick={handleNodeClick}
-                        onEdgeClick={handleEdgeClick}
-                    /> */
                     ) : (
                     <Box style={{ width: '100%', height: '100%', padding: '16px' }}>
                         <ScrollArea style={{ height: '100%' }}>
@@ -1409,9 +1122,7 @@ export default function Dashboard() {
                 withBorder
                 style={{ display: 'flex', flexDirection: 'column' }}
                 >
-                {/* Header Section dengan Tab Switcher */}
                 <Stack gap="sm" mb="sm">
-                    {/* Tab Switcher - Circular Design */}
                     <Group justify="center" mb="sm">
                     <Group 
                         gap={0} 
