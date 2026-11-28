@@ -1,19 +1,20 @@
-import '@mantine/core/styles.css';
-import { MantineProvider, ColorSchemeScript } from "@mantine/core";
+import "./globals.css";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: {
+    default: "Riset — Ruang kerja penelitian",
+    template: "%s | Riset",
+  },
+  description: "Kumpulkan artikel, petakan hubungan antarpenelitian, dan diskusikan temuan dalam satu ruang kerja riset.",
+};
 
 export default function RootLayout(
   {children}: {children: React.ReactNode}
 ){
   return(
-    <html suppressHydrationWarning>
-      <head>
-        <ColorSchemeScript />
-      </head>
-      <body suppressHydrationWarning>
-        <MantineProvider>
-          {children}
-        </MantineProvider>
-      </body>
+    <html lang="id" suppressHydrationWarning>
+      <body suppressHydrationWarning>{children}</body>
     </html>
   )
 }
