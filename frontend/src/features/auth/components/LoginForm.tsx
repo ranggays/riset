@@ -1,14 +1,10 @@
 "use client";
 
-import {
-  Box, Button, Checkbox, Group, Image, PasswordInput, Stack, Text, TextInput, Title, Alert, Modal,
-} from "@mantine/core";
-import { useState, useEffect } from "react";
-import NextImage from "next/image";
-import { IconEye, IconEyeOff, IconAlertCircle, IconCheck } from "@tabler/icons-react";
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-
 import { loginAction } from "../actions/actions";
+import styles from "./AuthForm.module.css";
 
 export default function LoginForm() {
   const [email, setEmail] = useState("");
@@ -17,25 +13,34 @@ export default function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  
   const [forgotPasswordOpened, setForgotPasswordOpened] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
-  const [resetLoading, setResetLoading] = useState(false);
-  const [resetError, setResetError] = useState("");
-  const [resetSuccess, setResetSuccess] = useState("");
-  
+  const [resetUnavailable, setResetUnavailable] = useState(false);
+
+  const resetDialog = useRef<HTMLDialogElement>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  useEffect(() => {
-    const errorFromCallback = searchParams.get('error');
-    if (errorFromCallback) {
-      setError(decodeURIComponent(errorFromCallback));
+  const errorFromCallback = searchParams.get("error");
+  let visibleError = error;
+  if (!visibleError && errorFromCallback) {
+    try {
+      visibleError = decodeURIComponent(errorFromCallback);
+    } catch {
+      visibleError = errorFromCallback;
     }
-  }, [searchParams]);
+  }
 
-  const handleSignIn = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    const dialog = resetDialog.current;
+    if (!dialog) return;
+
+    if (forgotPasswordOpened && !dialog.open) dialog.showModal();
+    if (!forgotPasswordOpened && dialog.open) dialog.close();
+  }, [forgotPasswordOpened]);
+
+  const handleSignIn = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setLoading(true);
     setError("");
 
@@ -56,297 +61,168 @@ export default function LoginForm() {
       setLoading(false);
       setEmail("");
       setPassword("");
-    } catch (error) {
-      console.error("Sign in error:", error);
+    } catch (caughtError) {
+      console.error("Sign in error:", caughtError);
       setError("Terjadi kesalahan. Silakan coba lagi.");
       setLoading(false);
     }
   };
 
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setResetLoading(true);
-    setResetError("");
-    setResetSuccess("");
+  const closeResetDialog = () => {
+    setForgotPasswordOpened(false);
+    setResetEmail("");
+    setResetUnavailable(false);
+  };
 
-    // try {
-    //   const result = await resetPassword(resetEmail);
+  const handleResetDialogClick = (event: MouseEvent<HTMLDialogElement>) => {
+    if (event.target === event.currentTarget) closeResetDialog();
+  };
 
-    //   if (result?.error) {
-    //     setResetError(result.error);
-    //   } else if (result?.success) {
-    //     setResetSuccess("Link reset password telah dikirim!");
-    //     setResetEmail("");
-        
-    //     // Close modal after 3 seconds
-    //     setTimeout(() => {
-    //       setForgotPasswordOpened(false);
-    //       setResetSuccess("");
-    //     }, 3000);
-    //   }
-    // } catch (error: any) {
-    //   setResetError("Terjadi kesalahan. Silakan coba lagi.");
-    // } finally {
-    //   setResetLoading(false);
-    // }
+  const handleResetPassword = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setResetUnavailable(true);
   };
 
   return (
-    <>
-      <Box
-        style={{
-          minHeight: "100vh",
-          backgroundImage: `url('/webp/login-background.webp')`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "20px",
-        }}
-      >
-        <Box
-          style={{
-            width: "100%",
-            maxWidth: 1100,
-            minHeight: "600px",
-            maxHeight: "90vh",
-            display: "flex",
-            boxShadow: "0 0 20px rgba(0,0,0,0.2)",
-            borderRadius: 16,
-            overflow: "hidden",
-            backgroundColor: "light-dark(white, var(--mantine-color-dark-6))",
-          }}
-        >
-          {/* Panel Kiri - Form Login */}
-          <Box
-            style={{
-              width: "55%",
-              backgroundColor: "light-dark(white, var(--mantine-color-dark-6))",
-              padding: "48px",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "center",
-              overflowY: "auto",
-            }}
-          >
-            <Box style={{ textAlign: "center", marginBottom: 24 }}>
-              <Title order={1} fw={800} mb={4} style={{ color: "light-dark(var(--mantine-color-dark-9), var(--mantine-color-gray-0))" }}>
-                MASUK
-              </Title>
-              <Text c="dimmed" size="sm">
-                Masukkan email Anda untuk login ke akun Anda
-              </Text>
-            </Box>
+    <main className={styles.authShell}>
+      <aside className={styles.brandPanel} aria-label="Riset">
+        <div className={styles.brand}>
+          <span className={styles.brandMark} aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+              <circle cx="16" cy="16" r="12" stroke="currentColor" strokeWidth="1.8" strokeDasharray="2.5 2.5" />
+              <path d="m11.5 16.5 3 3 6-6.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+          <span>Riset</span>
+        </div>
+        <div className={styles.brandMessage}>
+          <h2>Lanjutkan riset Anda.</h2>
+          <p>Simpan artikel, keterkaitannya, dan catatan riset Anda dalam satu ruang kerja.</p>
+        </div>
+      </aside>
 
-            <form onSubmit={handleSignIn}>
-              <Stack>
-                {error && (
-                  <Alert 
-                    icon={<IconAlertCircle size="1rem" />} 
-                    color="red" 
-                    variant="filled"
-                    mb="md"
-                  >
-                    {error}
-                  </Alert>
-                )}
+      <section className={styles.formPanel} aria-labelledby="login-title">
+        <div className={styles.formWrap}>
+          <h1 className={styles.title} id="login-title">Masuk</h1>
+          <p className={styles.intro}>Masukkan email Anda untuk login ke akun Anda.</p>
 
-                <Text fw={600}>Email</Text>
-                <TextInput
-                  placeholder="Masukkan email Anda..."
-                  value={email}
-                  onChange={(e) => setEmail(e.currentTarget.value)}
-                  required
-                  type="email"
-                  disabled={loading}
-                  styles={{
-                    input: {
-                      backgroundColor: "light-dark(white, var(--mantine-color-dark-7))",
-                      borderColor: "light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-4))",
-                      color: "light-dark(var(--mantine-color-dark-9), var(--mantine-color-gray-0))",
-                      '&::placeholder': {
-                        color: "light-dark(var(--mantine-color-gray-6), var(--mantine-color-dark-2))",
-                      }
-                    }
-                  }}
-                />
+          <form className={styles.form} onSubmit={handleSignIn}>
+            {visibleError && <p className={styles.error} role="alert">{visibleError}</p>}
 
-                <Text fw={600}>Kata Sandi</Text>
-                <PasswordInput
-                  placeholder="Masukkan kata sandi Anda..."
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="login-email">Email</label>
+              <input
+                className={styles.input}
+                id="login-email"
+                name="email"
+                type="email"
+                autoComplete="username"
+                placeholder="Masukkan email Anda..."
+                value={email}
+                onChange={(event) => setEmail(event.currentTarget.value)}
+                disabled={loading}
+                required
+              />
+            </div>
+
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="login-password">Kata Sandi</label>
+              <div className={styles.passwordField}>
+                <input
+                  className={styles.passwordInput}
+                  id="login-password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
                   value={password}
-                  onChange={(e) => setPassword(e.currentTarget.value)}
-                  visible={showPassword}
-                  onVisibilityChange={setShowPassword}
-                  visibilityToggleIcon={({ reveal }) =>
-                    reveal ? <IconEyeOff /> : <IconEye />
-                  }
-                  required
+                  onChange={(event) => setPassword(event.currentTarget.value)}
                   disabled={loading}
-                  styles={{
-                    input: {
-                      backgroundColor: "light-dark(white, var(--mantine-color-dark-7))",
-                      borderColor: "light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-4))",
-                      color: "light-dark(var(--mantine-color-dark-9), var(--mantine-color-gray-0))",
-                      '&::placeholder': {
-                        color: "light-dark(var(--mantine-color-gray-6), var(--mantine-color-dark-2))",
-                      }
-                    }
-                  }}
+                  required
                 />
-
-                <Group justify="space-between" mt="xs">
-                  <Checkbox
-                    label="Ingat saya"
-                    checked={remember}
-                    onChange={(e) => setRemember(e.currentTarget.checked)}
-                    disabled={loading}
-                  />
-                  <Text 
-                    size="sm" 
-                    c="blue" 
-                    style={{ cursor: "pointer" }}
-                    onClick={() => setForgotPasswordOpened(true)}
-                  >
-                    Lupa kata sandi?
-                  </Text>
-                </Group>
-
-                <Button 
-                  fullWidth 
-                  mt="md" 
-                  size="md" 
-                  color="blue" 
-                  radius="md" 
-                  type="submit"
-                  loading={loading}
+                <button
+                  className={styles.passwordToggle}
+                  type="button"
+                  aria-label={showPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
+                  aria-pressed={showPassword}
+                  onClick={() => setShowPassword((visible) => !visible)}
                   disabled={loading}
                 >
-                  {loading ? "Masuk..." : "Masuk"}
-                </Button>
-                
-                <Text ta="center" size="sm" mt="md">
-                  Belum punya akun?{" "}
-                  <Text 
-                    component="span" 
-                    c="blue" 
-                    fw={600}
-                    style={{ cursor: "pointer" }}
-                    onClick={() => router.push('/register')}
-                  >
-                    Daftar di sini
-                  </Text>
-                </Text>
-              </Stack>
-            </form>
-          </Box>
+                  {showPassword ? "Sembunyikan" : "Tampilkan"}
+                </button>
+              </div>
+            </div>
 
-          {/* Panel Kanan - Ilustrasi */}
-          <Box
-            style={{
-              width: "45%",
-              backgroundColor: "#0057b7",
-              padding: "32px",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "space-between",
-              color: "white",
-            }}
-          >
-            <Image
-              component={NextImage}
-              src='/webp/logoSRE.webp'
-              alt="My-SRE Logo"
-              width={160}
-              height={50}
-              fit="contain"
-              style={{ alignSelf: "flex-start" }}
-            />
+            <div className={styles.formOptions}>
+              <label className={styles.remember}>
+                <input
+                  type="checkbox"
+                  name="remember"
+                  checked={remember}
+                  onChange={(event) => setRemember(event.currentTarget.checked)}
+                  disabled={loading}
+                />
+                <span>Ingat saya</span>
+              </label>
+              <button
+                className={styles.textButton}
+                type="button"
+                onClick={() => setForgotPasswordOpened(true)}
+                disabled={loading}
+              >
+                Lupa kata sandi?
+              </button>
+            </div>
 
-            <Box style={{ textAlign: "center" }}>
-              <Image
-                component={NextImage}
-                src='/images/login-illustration.png'
-                alt="Illustration"
-                width={350}
-                height={350}
-                fit="contain"
-                style={{ margin: "0 auto" }}
-              />
-            </Box>
+            <button className={styles.submit} type="submit" disabled={loading}>
+              <span>{loading ? "Masuk..." : "Masuk"}</span>
+              <span className={styles.submitArrow} aria-hidden="true">→</span>
+            </button>
+          </form>
 
-            <Text size="xs" style={{ textAlign: "center" }}>
-              My-SRE © 2025
-            </Text>
-          </Box>
-        </Box>
-      </Box>
+          <p className={styles.registerPrompt}>
+            Belum punya akun? <Link href="/register">Daftar di sini</Link>
+          </p>
+        </div>
+      </section>
 
-      <Modal
-        opened={forgotPasswordOpened}
-        onClose={() => {
-          setForgotPasswordOpened(false);
-          setResetError("");
-          setResetSuccess("");
-          setResetEmail("");
-        }}
-        title={<Text fw={700} size="lg">Reset Password</Text>}
-        centered
+      <dialog
+        className={styles.resetDialog}
+        ref={resetDialog}
+        aria-labelledby="reset-title"
+        onClose={closeResetDialog}
+        onClick={handleResetDialogClick}
       >
-        <form onSubmit={handleResetPassword}>
-          <Stack>
-            <Text size="sm" c="dimmed">
-              Masukkan email Anda dan kami akan mengirimkan link untuk reset password.
-            </Text>
-
-            {resetError && (
-              <Alert 
-                icon={<IconAlertCircle size="1rem" />} 
-                color="red"
-              >
-                {resetError}
-              </Alert>
-            )}
-
-            {resetSuccess && (
-              <Alert 
-                icon={<IconCheck size="1rem" />} 
-                color="green"
-              >
-                {resetSuccess}
-              </Alert>
-            )}
-
-            <TextInput
-              label="Email"
+        <div className={styles.dialogHeader}>
+          <h2 id="reset-title">Reset Password</h2>
+          <button className={styles.dialogClose} type="button" onClick={closeResetDialog} aria-label="Tutup dialog">×</button>
+        </div>
+        <form className={styles.resetForm} onSubmit={handleResetPassword}>
+          <p>Masukkan email Anda untuk memulai reset kata sandi.</p>
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="reset-email">Email</label>
+            <input
+              className={styles.input}
+              id="reset-email"
+              name="resetEmail"
+              type="email"
+              autoComplete="email"
               placeholder="email@example.com"
               value={resetEmail}
-              onChange={(e) => setResetEmail(e.currentTarget.value)}
+              onChange={(event) => setResetEmail(event.currentTarget.value)}
               required
-              type="email"
-              disabled={resetLoading || !!resetSuccess}
             />
-
-            <Group justify="flex-end" mt="md">
-              <Button 
-                variant="subtle" 
-                onClick={() => setForgotPasswordOpened(false)}
-                disabled={resetLoading}
-              >
-                Batal
-              </Button>
-              <Button 
-                type="submit" 
-                loading={resetLoading}
-                disabled={resetLoading || !!resetSuccess}
-              >
-                Kirim Link Reset
-              </Button>
-            </Group>
-          </Stack>
+          </div>
+          {resetUnavailable && (
+            <p className={styles.resetNotice} role="status">
+              Fitur reset kata sandi belum tersedia. Silakan hubungi administrator.
+            </p>
+          )}
+          <div className={styles.dialogActions}>
+            <button className={styles.cancelButton} type="button" onClick={closeResetDialog}>Batal</button>
+            <button className={styles.submit} type="submit">Kirim Link Reset</button>
+          </div>
         </form>
-      </Modal>
-    </>
+      </dialog>
+    </main>
   );
 }
