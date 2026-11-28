@@ -3,15 +3,15 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { PdfLoader, PdfHighlighter, Highlight, Popup, AreaHighlight } from "react-pdf-highlighter";
 import type { Content, IHighlight, NewHighlight, ScaledPosition } from "react-pdf-highlighter";
-import { Button, Group, Card, Text, ScrollArea, Title, Divider, Stack, useMantineColorScheme, useMantineTheme, ActionIcon, Loader } from "@mantine/core";
 import { IconTrash, IconDownload } from "@tabler/icons-react";
 import "react-pdf-highlighter/dist/style.css";
 import { PDFDocument, rgb } from "pdf-lib";
+import styles from "../../Dashboard.module.css";
 
 interface WebViewerProps {
     fileUrl: string;
-    onAnalytics?: (data: any) => void;
-    session?: any;
+    onAnalytics?: (data: Record<string, unknown>) => void;
+    session?: Record<string, unknown> | null;
     articleId?: string;
 }
 
@@ -38,9 +38,6 @@ const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics, session, ar
   const [isDownloading, setIsDownloading] = useState(false)
   const scrollViewerTo = useRef<(highlight: IHighlight) => void>(() => {})
 
-  const { colorScheme } = useMantineColorScheme()
-  const theme = useMantineTheme()
-  const isDark = colorScheme === "dark"
 
   useEffect(() => {
     const loadAnnotations = async () => {
@@ -385,19 +382,7 @@ const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics, session, ar
 
   const HighlightPopup = ({ comment }: { comment: { text: string; emoji: string } }) =>
     comment?.text ? (
-      <div
-        className="Highlight__popup"
-        style={{
-          backgroundColor: isDark ? theme.colors.dark[6] : theme.colors.gray[0],
-          color: isDark ? theme.colors.gray[0] : theme.colors.dark[7],
-          border: `1px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
-          borderRadius: theme.radius.sm,
-          padding: "8px 12px",
-          boxShadow: isDark ? `0 2px 8px ${theme.colors.dark[9]}` : `0 2px 8px ${theme.colors.gray[3]}`,
-          fontSize: "14px",
-          maxWidth: "200px",
-        }}
-      >
+      <div className={`Highlight__popup ${styles.highlightPopup}`}>
         {comment.text ? comment.text.replace(/[\u{1F300}-\u{1F9FF}]/gu, "").trim() : ""}
       </div>
     ) : null
@@ -417,15 +402,8 @@ const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics, session, ar
 
     return (
       <div
-        className="PdfHighlighter__tip-container"
+        className={`PdfHighlighter__tip-container ${styles.highlightTip}`}
         onMouseDown={(e) => e.stopPropagation()}
-        style={{
-          backgroundColor: isDark ? theme.colors.dark[6] : theme.colors.gray[0],
-          border: `1px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
-          borderRadius: theme.radius.sm,
-          padding: "8px",
-          boxShadow: isDark ? `0 2px 8px ${theme.colors.dark[9]}` : `0 2px 8px ${theme.colors.gray[3]}`,
-        }}
       >
         <div className="PdfHighlighter__tip-compact">
           <input
@@ -434,15 +412,7 @@ const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics, session, ar
             value={text}
             onChange={(e) => setText(e.target.value)}
             onMouseDown={(e) => e.stopPropagation()}
-            style={{
-              width: "150px",
-              padding: "4px 8px",
-              marginBottom: "8px",
-              border: `1px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
-              borderRadius: theme.radius.sm,
-              backgroundColor: isDark ? theme.colors.dark[7] : theme.colors.gray[0],
-              color: isDark ? theme.colors.gray[0] : theme.colors.dark[7],
-            }}
+            className={styles.highlightInput}
           />
           <button
             type="submit"
@@ -450,14 +420,7 @@ const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics, session, ar
               onConfirm({ text: text.replace(/[\u{1F300}-\u{1F9FF}]/gu, "").trim(), emoji: "" })
               window.getSelection()?.removeAllRanges()
             }}
-            style={{
-              padding: "4px 12px",
-              backgroundColor: theme.colors.blue[6],
-              color: "white",
-              border: "none",
-              borderRadius: theme.radius.sm,
-              cursor: "pointer",
-            }}
+            className={styles.highlightSubmit}
           >
             Add
           </button>
@@ -467,58 +430,18 @@ const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics, session, ar
   }
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        backgroundColor: isDark ? theme.colors.dark[7] : theme.colors.gray[0],
-        color: isDark ? theme.colors.gray[0] : theme.colors.dark[7],
-      }}
-    >
-      <Group
-        justify="end"
-        p="sm"
-        style={{
-          backgroundColor: isDark ? theme.colors.dark[6] : theme.colors.gray[1],
-          borderBottom: `1px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
-        }}
-      >
-        <Button 
-          onClick={handleDownloadWithHighlights} 
-          variant="light" 
-          size="xs" 
-          color="blue"
-          leftSection={<IconDownload size={16} />}
-          loading={isDownloading}
-          disabled={isDownloading}
-        >
-          {isDownloading ? 'Downloading...' : 'Download PDF with Highlights'}
-        </Button>
-      </Group>
-      <div style={{ display: "flex", height: "100%" }}>
-        <div
-          style={{
-            flex: 3,
-            position: "relative",
-            backgroundColor: isDark ? theme.colors.dark[8] : theme.colors.gray[0],
-          }}
-        >
+    <div className={styles.webViewer}>
+      <div className={styles.pdfToolbar}>
+        <button className={styles.primaryButton} onClick={handleDownloadWithHighlights} disabled={isDownloading} type="button">
+          <IconDownload size={16} /> {isDownloading ? "Mengunduh…" : "Unduh PDF dengan highlight"}
+        </button>
+      </div>
+      <div className={styles.pdfWorkspace}>
+        <div className={styles.pdfCanvas}>
           <PdfLoader
             url={fileUrl}
             beforeLoad={
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  height: "100%",
-                  backgroundColor: isDark ? theme.colors.dark[7] : theme.colors.gray[0],
-                  color: isDark ? theme.colors.gray[0] : theme.colors.dark[7],
-                }}
-              >
-                Loading PDF...
-              </div>
+              <div className={styles.pdfLoading} role="status">Memuat PDF…</div>
             }
           >
             {(pdfDocument) => (
@@ -576,87 +499,45 @@ const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics, session, ar
             )}
           </PdfLoader>
         </div>
-        <div
-          style={{
-            flex: 1,
-            borderLeft: `1px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
-            backgroundColor: isDark ? theme.colors.dark[6] : theme.colors.gray[0],
-            padding: "1rem",
-            overflowY: "auto",
-          }}
-        >
-          <Title order={5} mb="sm" c={isDark ? "gray.0" : "dark.7"}>
-            Highlighted Notes
-          </Title>
-          <Divider mb="sm" color={isDark ? theme.colors.dark[4] : theme.colors.gray[3]} />
-          <ScrollArea h="100%">
+        <aside className={styles.pdfNotes}>
+          <h3>Highlight & catatan</h3>
+          <div className={styles.pdfNotesList}>
             {isLoadingAnnotations ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
-                <Loader size="sm" />
-              </div>
+              <div className={styles.annotationLoading} role="status"><span className={styles.spinner} />Memuat anotasi…</div>
             ) : (
-              <Stack>
-                {highlights.length === 0 ? (
-                  <Text c="dimmed" size="sm">
-                    Belum ada highlight.
-                  </Text>
-                ) : (
+              <>
+                {highlights.length === 0 ? <p className={styles.muted}>Belum ada highlight.</p> : (
                   highlights.map((h) => {
                     const text = typeof h.content === "string" ? h.content : h.content?.text || ""
                     return (
-                      <Card
-                        key={h.id}
-                        withBorder
-                        radius="md"
-                        shadow="sm"
-                        style={{
-                          cursor: "pointer",
-                          transition: "0.2s",
-                          backgroundColor: isDark ? theme.colors.dark[5] : theme.colors.gray[0],
-                          borderColor: isDark ? theme.colors.dark[4] : theme.colors.gray[3],
-                          position: 'relative',
-                        }}
-                        mih={80}
-                      >
-                        <div onClick={() => scrollViewerTo.current(h)}>
-                          <Text size="xs" c="dimmed" mb={4}>
-                            Page {h.position.pageNumber}
-                          </Text>
+                      <article className={styles.pdfNoteCard} key={h.id}>
+                        <button className={styles.pdfNoteBody} onClick={() => scrollViewerTo.current(h)} type="button">
+                          <span className={styles.muted}>Halaman {h.position.pageNumber}</span>
                           {text && (
-                            <Text size="sm" fw={500} lineClamp={3} mb={4} c={isDark ? "gray.0" : "dark.7"}>
+                            <strong>
                               {text}
-                            </Text>
+                            </strong>
                           )}
                           {h.comment?.text && (
-                            <Text size="sm" c={isDark ? "gray.3" : "gray.7"}>
-                              Note: {h.comment.text.replace(/[\u{1F300}-\u{1F9FF}]/gu, "").trim()}
-                            </Text>
+                            <span>Catatan: {h.comment.text.replace(/[\u{1F300}-\u{1F9FF}]/gu, "").trim()}</span>
                           )}
-                        </div>
-                        <ActionIcon
-                          color="red"
-                          variant="subtle"
-                          size="sm"
-                          style={{
-                            position: 'absolute',
-                            top: '8px',
-                            right: '8px',
-                          }}
+                        </button>
+                        <button className={styles.deleteHighlight} aria-label="Hapus highlight" type="button"
                           onClick={(e) => {
                             e.stopPropagation()
                             deleteHighlight(h.id)
                           }}
                         >
                           <IconTrash size={16} />
-                        </ActionIcon>
-                      </Card>
+                        </button>
+                      </article>
                     )
                   })
                 )}
-              </Stack>
+              </>
             )}
-          </ScrollArea>
-        </div>
+          </div>
+        </aside>
       </div>
     </div>
   )

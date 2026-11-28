@@ -1,147 +1,42 @@
+"use client";
+
 import { useState, useEffect } from "react";
-import { Modal, Group, ThemeIcon, Text, Stack, Box, Card, TextInput, Button, useMantineTheme } from "@mantine/core";
 import { IconNote, IconCheck } from "@tabler/icons-react";
-import { notifications } from "@mantine/notifications";
+import { notifyDashboard } from "../DashboardFeedback";
+import { NativeDialog } from "../NativeDialog";
+import styles from "../../Dashboard.module.css";
 
-interface AnnotationModalProps {
-    opened: boolean;
-    onClose: () => void;
-    highlightedText: string;
-    targetUrl: string | null;
-    isDark: boolean;
-}
+interface AnnotationModalProps { opened: boolean; onClose: () => void; highlightedText: string; targetUrl: string | null; isDark: boolean; }
 
-const AnnotationModal = ({ opened, onClose, highlightedText, targetUrl, isDark }: AnnotationModalProps) => {
-    const theme = useMantineTheme();
-    
-    const [comment, setComment] = useState("");
-    const [isSaving, setIsSaving] = useState(false);
+const AnnotationModal = ({ opened, onClose, highlightedText, targetUrl }: AnnotationModalProps) => {
+  const [comment, setComment] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  useEffect(() => {
+    if (!opened) return;
+    const timer = window.setTimeout(() => setComment(""), 0);
+    return () => window.clearTimeout(timer);
+  }, [opened, highlightedText]);
 
-    const [session, setSession] = useState<any>(null)
+  const handleSave = async () => {
+    if (!comment.trim() || !targetUrl) { notifyDashboard("Tidak dapat menyimpan", "Komentar tidak boleh kosong.", true); return; }
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/annotation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ document: targetUrl, metadata: { pageNumber: 1, highlightedText, contents: comment } }) });
+      if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.message || "Gagal menyimpan anotasi."); }
+      notifyDashboard("Berhasil", "Anotasi berhasil disimpan.");
+      onClose();
+    } catch (error: unknown) { notifyDashboard("Gagal", error instanceof Error ? error.message : "Terjadi kesalahan saat menyimpan.", true); }
+    finally { setIsSaving(false); }
+  };
 
-    useEffect(() => {
-        const getSessionFromAPI = async () => {
-        try {
-            const response = await fetch('/api/session');
-            const data = await response.json();
-            
-            if (data.user) {
-            setSession({
-                user: data.user,
-                expires_at: data.expires_at
-            });
-            } else {
-            console.log("No session from API");
-            }
-        } catch (error) {
-            console.error("API session fetch error:", error);
-        }
-        };
-        
-        getSessionFromAPI();
-    }, []);
-    useEffect(() => {
-        if (opened) {
-            setComment("");
-        }
-    }, [opened, highlightedText]);
-
-    const handleSave = async () => {
-        if (!comment.trim() || !targetUrl) {
-            notifications.show({
-                title: "Error",
-                message: "Komentar tidak boleh kosong.",
-                color: "red",
-            });
-            return;
-        }
-
-        setIsSaving(true);
-        try {
-            const response = await fetch("/api/annotation", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    document: targetUrl,
-                    metadata: {
-                        pageNumber: 1, 
-                        highlightedText: highlightedText,
-                        contents: comment,
-                    },
-                }),
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || "Gagal menyimpan anotasi.");
-            }
-
-            notifications.show({
-                title: "Berhasil",
-                message: "Anotasi berhasil disimpan!",
-                color: "green",
-            });
-            onClose(); 
-        } catch (error: any) {
-            notifications.show({
-                title: "Gagal",
-                message: error.message || "Terjadi kesalahan saat menyimpan.",
-                color: "red",
-            });
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    return (
-        <Modal
-            opened={opened}
-            onClose={onClose}
-            title={
-                <Group gap="xs">
-                    <ThemeIcon variant="gradient" gradient={{ from: "blue", to: "cyan" }} size="md">
-                        <IconNote size={16} />
-                    </ThemeIcon>
-                    <Text fw={600}>Buat Anotasi</Text>
-                </Group>
-            }
-            centered
-            overlayProps={{ blur: 3 }}
-            radius="lg"
-        >
-            <Stack gap="md">
-                <Box>
-                    <Text size="sm" c="dimmed" mb={8} fw={500}>Teks yang dipilih:</Text>
-                    <Card p="md" withBorder radius="md" style={{ background: isDark ? theme.colors.dark[7] : theme.colors.gray[1] }}>
-                        <Text size="sm" style={{ fontStyle: "italic", lineHeight: 1.5 }}>
-                            {highlightedText.length > 150 ? `${highlightedText.substring(0, 150)}...` : highlightedText}
-                        </Text>
-                    </Card>
-                </Box>
-                <TextInput
-                    label="Komentar Anda"
-                    placeholder="Tambahkan komentar untuk anotasi ini..."
-                    value={comment}
-                    onChange={(event) => setComment(event.currentTarget.value)}
-                    data-autofocus 
-                />
-                <Group justify="flex-end" gap="sm">
-                    <Button variant="light" color="gray" onClick={onClose} radius="md">Batal</Button>
-                    <Button
-                        variant="gradient"
-                        gradient={{ from: "blue", to: "cyan" }}
-                        onClick={handleSave}
-                        loading={isSaving}
-                        disabled={!comment.trim()}
-                        leftSection={<IconCheck size={16} />}
-                        radius="md"
-                    >
-                        Simpan Anotasi
-                    </Button>
-                </Group>
-            </Stack>
-        </Modal>
-    );
+  return <NativeDialog open={opened} onClose={onClose} labelledBy="annotation-dialog-title" className={styles.annotationDialog}>
+    <header className={styles.dialogHeader}><div><span className={styles.detailType}><IconNote size={15} /> Anotasi dokumen</span><h2 className={styles.dialogTitle} id="annotation-dialog-title">Buat anotasi</h2></div><button className={styles.dialogClose} onClick={onClose} type="button" aria-label="Tutup dialog">×</button></header>
+    <div className={styles.annotationForm}>
+      <section className={styles.selectedQuote}><h3>Teks yang dipilih</h3><blockquote>{highlightedText.length > 150 ? `${highlightedText.substring(0, 150)}…` : highlightedText}</blockquote></section>
+      <label className={styles.formField}><span className={styles.fieldLabel}>Komentar Anda</span><textarea autoFocus className={styles.fieldTextarea} placeholder="Tambahkan catatan untuk kutipan ini…" value={comment} onChange={(event) => setComment(event.currentTarget.value)} /></label>
+      <footer className={styles.dialogActions}><button className={styles.quietButton} onClick={onClose} type="button">Batal</button><button className={styles.primaryButton} onClick={() => void handleSave()} disabled={!comment.trim() || isSaving} type="button"><IconCheck size={16} /> {isSaving ? "Menyimpan…" : "Simpan anotasi"}</button></footer>
+    </div>
+  </NativeDialog>;
 };
 
 export default AnnotationModal;

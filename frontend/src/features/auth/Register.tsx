@@ -1,11 +1,10 @@
-"use client"
+"use client";
 
-import{ Box, Button, Group, Image, PasswordInput, Radio, Stack, Text, TextInput, Title, Alert } from "@mantine/core";
-import { IconAlertCircle  } from "@tabler/icons-react";
-import { useState } from "react";
-import NextImage from "next/image";
+import { useState, type ChangeEvent, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { registerAction } from "./actions/actions";
+import styles from "./components/AuthForm.module.css";
 
 export default function Register() {
   const [form, setForm] = useState({
@@ -14,286 +13,220 @@ export default function Register() {
     email: "",
     group: "",
     password: "",
-    confirmPassword: "",
   });
+  const [showPassword, setShowPassword] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
-  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const router = useRouter();
 
-  const handleSignUp = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const updateForm = (field: keyof typeof form, value: string) => {
+    setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleSidChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const value = event.currentTarget.value;
+    if (value === "" || /^\d+$/.test(value)) updateForm("sid", value);
+  };
+
+  const handleSignUp = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setLoading(true);
     setError("");
     setSuccessMessage("");
 
-    // Validasi manual untuk field yang wajib diisi
     if (!form.fullName.trim()) {
-      setError("Nama Lengkap wajib diisi");
+      setError("Nama lengkap wajib diisi.");
       setLoading(false);
       return;
     }
-
     if (!form.sid.trim()) {
-      setError("SID atau NIM wajib diisi");
+      setError("SID atau NIM wajib diisi.");
       setLoading(false);
       return;
     }
-
     if (!form.email.trim()) {
-      setError("Email wajib diisi");
+      setError("Email wajib diisi.");
       setLoading(false);
       return;
     }
-
     if (!form.group) {
-      setError("Silakan pilih grup terlebih dahulu");
+      setError("Silakan pilih grup terlebih dahulu.");
       setLoading(false);
       return;
     }
-
     if (!form.password.trim()) {
-      setError("Kata Sandi wajib diisi");
+      setError("Kata sandi wajib diisi.");
       setLoading(false);
       return;
     }
 
     try {
-        const result = await registerAction({
-            fullName: form.fullName,
-            sid: form.sid,
-            email: form.email,
-            group: form.group,
-            password: form.password
-        });
+      const result = await registerAction({
+        fullName: form.fullName,
+        sid: form.sid,
+        email: form.email,
+        group: form.group,
+        password: form.password,
+      });
 
-        if("error" in result){
-            setError(result.error);
-            setLoading(false);
-            return;
-        };
-
-        if(result.needsEmailConfirmation){
-            setSuccessMessage("Pendaftaran berhasil. Silahkan cek email untuk konfirmasi akun, lalu masuk.");
-            setLoading(false);
-            return;
-        }
-
-        router.push("/projects");
-    } catch (error) {
-        console.error('Sign up error:', error);
-        setError('Terjadi kesalahan, silahkan coba lagi');
+      if ("error" in result) {
+        setError(result.error);
         setLoading(false);
-    }
-  }
-
-  // Handler untuk SID/NIM - hanya menerima angka
-  const handleSidChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.currentTarget.value;
-    // Hanya izinkan angka
-    if (value === '' || /^\d+$/.test(value)) {
-      setForm({ ...form, sid: value });
-    }
-  };
-
-  const inputStyles = {
-    input: {
-      backgroundColor: "light-dark(white, var(--mantine-color-dark-7))",
-      borderColor: "light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-4))",
-      color: "light-dark(var(--mantine-color-dark-9), var(--mantine-color-gray-0))",
-      '&::placeholder': {
-        color: "light-dark(var(--mantine-color-gray-6), var(--mantine-color-dark-2))",
+        return;
       }
+
+      if (result.needsEmailConfirmation) {
+        setSuccessMessage("Pendaftaran berhasil. Silakan cek email untuk mengonfirmasi akun, lalu masuk.");
+        setLoading(false);
+        return;
+      }
+
+      router.push("/projects");
+    } catch (caughtError) {
+      console.error("Sign up error:", caughtError);
+      setError("Terjadi kesalahan. Silakan coba lagi.");
+      setLoading(false);
     }
   };
 
   return (
-    <Box
-      style={{
-        minHeight: "100vh",
-        backgroundImage: `url('/webp/login-background.webp')`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "20px",
-      }}
-    >
-      <Box
-        style={{
-          width: "100%",
-          maxWidth: 1100,
-          minHeight: "600px",
-          maxHeight: "90vh",
-          display: "flex",
-          boxShadow: "0 0 20px rgba(0,0,0,0.2)",
-          borderRadius: 16,
-          overflow: "hidden",
-          backgroundColor: "light-dark(white, var(--mantine-color-dark-6))",
-        }}
-      >
-        {/* Panel Kiri - Ilustrasi dan Logo */}
-        <Box
-          style={{
-            width: "45%",
-            backgroundColor: "#0057b7",
-            padding: "32px",
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "space-between",
-            color: "white",
-          }}
-        >
-          <Image
-            component={NextImage}
-            src='/webp/logoSRE.webp'
-            alt="My-SRE Logo"
-            width={170}
-            height={50}
-            fit="contain"
-            style={{ alignSelf: "flex-start" }}
-          />
+    <main className={styles.authShell}>
+      <aside className={styles.brandPanel} aria-label="Riset">
+        <div className={styles.brand}>
+          <span className={styles.brandMark} aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+              <circle cx="16" cy="16" r="12" stroke="currentColor" strokeWidth="1.8" strokeDasharray="2.5 2.5" />
+              <path d="m11.5 16.5 3 3 6-6.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+          <span>Riset</span>
+        </div>
+        <div className={styles.brandMessage}>
+          <h2>Bangun riset yang saling terhubung.</h2>
+          <p>Satukan artikel, keterkaitannya, dan catatan riset Anda dalam satu ruang kerja.</p>
+        </div>
+      </aside>
 
-          <Box style={{ textAlign: "center" }}>
-            <Image
-              component={NextImage}
-              src='/images/signin-illustration.png'
-              alt="Illustration"
-              width={350}
-              height={350}
-              fit="contain"
-              style={{ margin: "0 auto" }}
-            />
-          </Box>
+      <section className={styles.formPanel} aria-labelledby="register-title">
+        <div className={styles.formWrap}>
+          <h1 className={styles.title} id="register-title">Buat akun</h1>
+          <p className={styles.intro}>Siapkan akun untuk mulai menata riset Anda.</p>
 
-          <Text size="xs" style={{ textAlign: "center" }}>
-            My-SRE © 2025
-          </Text>
-        </Box>
+          <form className={styles.form} onSubmit={handleSignUp}>
+            {error && <p className={styles.error} role="alert">{error}</p>}
 
-        {/* Panel Kanan - Form */}
-        <Box
-          style={{
-            width: "55%",
-            paddingTop: "32px",
-            paddingBottom: "32px",
-            paddingInline: "40px",
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "flex-start",
-            overflowY: "auto",
-            backgroundColor: "light-dark(white, var(--mantine-color-dark-6))",
-          }}
-        >
-          <Title order={1} mb={0} fw={700} style={{ color: "light-dark(var(--mantine-color-dark-9), var(--mantine-color-gray-0))" }}>
-            Daftar Akun
-          </Title>
-          <Text mb="sm" c="dimmed">
-            Masukkan informasi Anda untuk membuat akun
-          </Text>
-
-          <form onSubmit={handleSignUp}
-          style={{ flexGrow: 1 }}
-          >
-            <Stack gap={6}>
-              {error && (
-                <Alert 
-                  icon={<IconAlertCircle size="1rem" />} 
-                  color="red" 
-                  variant="filled"
-                  mb="md"
-                >
-                  {error}
-                </Alert>
-              )}
-              <Text fw={600}>Nama Lengkap</Text>
-              <TextInput
-                placeholder="Masukkan nama lengkap Anda..."
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="register-name">Nama lengkap</label>
+              <input
+                className={styles.input}
+                id="register-name"
+                name="fullName"
+                type="text"
+                autoComplete="name"
+                placeholder="Nama lengkap Anda"
                 value={form.fullName}
-                onChange={(e) =>
-                  setForm({ ...form, fullName: e.currentTarget.value })
-                }
-                required
+                onChange={(event) => updateForm("fullName", event.currentTarget.value)}
                 disabled={loading}
-                styles={inputStyles}
+                required
               />
+            </div>
 
-              <Text fw={600}>SID atau NIM</Text>
-              <TextInput
-                placeholder="Masukkan SID atau NIM Anda..."
-                value={form.sid}
-                onChange={handleSidChange}
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="register-sid">SID atau NIM</label>
+              <input
+                className={styles.input}
+                id="register-sid"
+                name="sid"
                 type="text"
                 inputMode="numeric"
                 pattern="\d*"
-                required
+                autoComplete="off"
+                placeholder="Masukkan SID atau NIM"
+                value={form.sid}
+                onChange={handleSidChange}
                 disabled={loading}
-                styles={inputStyles}
+                required
               />
+            </div>
 
-              <Text fw={600}>Email</Text>
-              <TextInput
-                placeholder="Masukkan email Anda..."
-                value={form.email}
-                onChange={(e) =>
-                  setForm({ ...form, email: e.currentTarget.value })
-                }
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="register-email">Email</label>
+              <input
+                className={styles.input}
+                id="register-email"
+                name="email"
                 type="email"
-                required
+                autoComplete="email"
+                placeholder="nama@organisasi.com"
+                value={form.email}
+                onChange={(event) => updateForm("email", event.currentTarget.value)}
                 disabled={loading}
-                styles={inputStyles}
-              />
-
-              <Text fw={600}>Grup</Text>
-              <Radio.Group
-                value={form.group}
-                onChange={(value) => setForm({ ...form, group: value })}
                 required
-              >
-                <Group>
-                  <Radio value="A" label="Group A" disabled={loading} />
-                  <Radio value="B" label="Group B" disabled={loading} />
-                </Group>
-              </Radio.Group>
-
-              <Text fw={600}>Kata Sandi</Text>
-              <PasswordInput
-                placeholder="Masukkan kata sandi Anda..."
-                value={form.password}
-                onChange={(e) =>
-                  setForm({ ...form, password: e.currentTarget.value })
-                }
-                required
-                disabled={loading}
-                styles={inputStyles}
               />
+            </div>
 
-              <Button fullWidth mt="xs" color="blue" type="submit" loading={loading} disabled={loading}>
-                {loading ? "Daftar..." : "Daftar"}
-              </Button>
-              
-              <Text ta="center" size="sm" mt="md">
-                Sudah punya akun?{" "}
-                <Text 
-                  component="span" 
-                  c="blue" 
-                  fw={600}
-                  style={{ cursor: "pointer" }}
-                  onClick={() => router.push('/login')}
+            <fieldset className={`${styles.field} ${styles.groupField}`}>
+              <legend className={styles.label}>Grup</legend>
+              <div className={styles.groupOptions}>
+                {["A", "B"].map((group) => (
+                  <label className={styles.groupOption} key={group}>
+                    <input
+                      type="radio"
+                      name="group"
+                      value={group}
+                      checked={form.group === group}
+                      onChange={(event) => updateForm("group", event.currentTarget.value)}
+                      disabled={loading}
+                      required
+                    />
+                    <span>Grup {group}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="register-password">Kata sandi</label>
+              <div className={styles.passwordField}>
+                <input
+                  className={styles.passwordInput}
+                  id="register-password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="new-password"
+                  value={form.password}
+                  onChange={(event) => updateForm("password", event.currentTarget.value)}
+                  disabled={loading}
+                  required
+                />
+                <button
+                  className={styles.passwordToggle}
+                  type="button"
+                  aria-label={showPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
+                  aria-pressed={showPassword}
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  disabled={loading}
                 >
-                  Masuk di sini
-                </Text>
-              </Text>
-            </Stack>
-            {successMessage && (
-                <Alert color="green" mb="md">
-                    {successMessage}
-                </Alert>
-            )}
+                  {showPassword ? "Sembunyikan" : "Tampilkan"}
+                </button>
+              </div>
+              <p className={styles.formNote}>Gunakan kata sandi yang tidak Anda pakai di layanan lain.</p>
+            </div>
+
+            <button className={styles.submit} type="submit" disabled={loading}>
+              <span>{loading ? "Mendaftar..." : "Buat akun"}</span>
+              <span className={styles.submitArrow} aria-hidden="true">→</span>
+            </button>
           </form>
-        </Box>
-      </Box>
-    </Box>
+
+          {successMessage && <p className={styles.success} role="status" aria-live="polite">{successMessage}</p>}
+
+          <p className={styles.registerPrompt}>
+            Sudah punya akun? <Link href="/login">Masuk di sini</Link>
+          </p>
+        </div>
+      </section>
+    </main>
   );
 }

@@ -1,254 +1,58 @@
-"use client"
+"use client";
 
-import { Modal, Text, Group, Badge, Paper, ThemeIcon, Box, Stack, Loader, Center } from "@mantine/core";
-import type { ExtendedNode, ExtendedEdge } from "../../types";
-import { IconArticle, IconTarget, IconMath, IconHistory, IconArrowForward, IconFileAlert } from "@tabler/icons-react";
 import { useCallback, useState } from "react";
+import type { ExtendedNode } from "../../types";
+import { IconArticle, IconTarget, IconMath, IconHistory, IconArrowForward, IconFileAlert, IconExternalLink } from "@tabler/icons-react";
 import WebViewer from "./WebViewer";
+import { NativeDialog } from "../NativeDialog";
+import styles from "../../Dashboard.module.css";
 
 interface NodeDetailProps {
-    node: ExtendedNode | null;
-    onClose: () => void;
-    trackPdfView?: (pdfName: string, action: "open" | "close") => void;
-    trackModalInteraction?: (modalType: string, action: "open" | "close") => void;
-    session?: any;
-    projectId?: any;
-};
+  node: ExtendedNode | null;
+  onClose: () => void;
+  trackPdfView?: (pdfName: string, action: "open" | "close") => void;
+  trackModalInteraction?: (modalType: string, action: "open" | "close") => void;
+  session?: Record<string, unknown> | null;
+  projectId?: string;
+}
 
-const attributeIcons = {
-  goal: <IconTarget size={16} />,
-  method: <IconMath size={16} />,
-  background: <IconHistory size={16} />,
-  future: <IconArrowForward size={16} />,
-  gaps: <IconFileAlert size={16} />
-};
+const details = [
+  { key: "att_goal", title: "Tujuan", icon: IconTarget },
+  { key: "att_method", title: "Metodologi", icon: IconMath },
+  { key: "att_background", title: "Latar belakang", icon: IconHistory },
+  { key: "att_future", title: "Penelitian lanjut", icon: IconArrowForward },
+  { key: "att_gaps", title: "Kesenjangan", icon: IconFileAlert },
+] as const;
 
-const attributeColors = {
-  goal: 'orange',
-  method: 'green',
-  background: 'blue',
-  future: 'violet',
-  gaps: 'red',
-};
-
-export default function NodeDetail({ node, onClose, trackPdfView, trackModalInteraction, session }: NodeDetailProps) {
+export default function NodeDetail({ node, trackPdfView, session }: NodeDetailProps) {
   const [opened, setOpened] = useState(false);
   const [selectedPDF, setSelectedPDF] = useState<string | null>(null);
-
   const handlePdfOpen = useCallback((pdfUrl: string, pdfName?: string) => {
-    const fileName = pdfName || pdfUrl.split('/').pop() || 'unknown.pdf';
-    
-    console.log("📖 Opening PDF:", { fileName, pdfUrl, session });
-    
+    const fileName = pdfName || pdfUrl.split("/").pop() || "unknown.pdf";
     setSelectedPDF(pdfUrl);
     setOpened(true);
-    
-    if (trackPdfView) {
-      try {
-        trackPdfView(fileName, 'open');
-        console.log("✅ PDF view open tracked");
-      } catch (error) {
-        console.error("❌ PDF view open tracking error:", error);
-      }
-    }
-  }, [trackPdfView, session]);
-
+    trackPdfView?.(fileName, "open");
+  }, [trackPdfView]);
   const handlePdfClose = useCallback(() => {
-    const fileName = selectedPDF?.split('/').pop() || 'unknown.pdf';
-    
-    console.log("📖 Closing PDF:", { fileName });
-    
-    if (trackPdfView && selectedPDF) {
-      try {
-        trackPdfView(fileName, 'close');
-        console.log("✅ PDF view close tracked");
-      } catch (error) {
-        console.error("❌ PDF view close tracking error:", error);
-      }
-    }
-    
+    if (selectedPDF) trackPdfView?.(selectedPDF.split("/").pop() || "unknown.pdf", "close");
     setOpened(false);
     setSelectedPDF(null);
   }, [selectedPDF, trackPdfView]);
 
-  if (!node) {
-    return null;
-  }
-  
-  return (
-    <Stack gap="lg">
-      {/* Title Section */}
-      <Paper p="md" radius="md" withBorder>
-        <Group justify="space-between" mb="xs">
-          <Badge size="lg" variant="dot" color="blue">
-            Artikel Penelitian
-          </Badge>
-          <ThemeIcon size="lg" variant="light" color="blue" radius="md">
-            <IconArticle size={20} />
-          </ThemeIcon>
-        </Group>
-        <Text size="lg" fw={500} style={{ wordBreak: 'break-word' }}>
-          {node.title || node.label}
-        </Text>
-      </Paper>
-
-      {/* Attributes Section */}
-      <Stack gap="md">
-        {/* Goal */}
-        <Paper p="md" radius="md" withBorder>
-          <Group align="flex-start">
-            <ThemeIcon size="md" variant="light" color={attributeColors.goal}>
-              {attributeIcons.goal}
-            </ThemeIcon>
-            <Box style={{ flex: 1 }}>
-              <Text size="sm" fw={500} color="dimmed" mb="xs">
-                Tujuan:
-              </Text>
-              <Text size="sm" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-                {node.att_goal || '-'}
-              </Text>
-            </Box>
-          </Group>
-        </Paper>
-
-        {/* Method */}
-        <Paper p="md" radius="md" withBorder>
-          <Group align="flex-start">
-            <ThemeIcon size="md" variant="light" color={attributeColors.method}>
-              {attributeIcons.method}
-            </ThemeIcon>
-            <Box style={{ flex: 1 }}>
-              <Text size="sm" fw={500} color="dimmed" mb="xs">
-                Metodologi:
-              </Text>
-              <Text size="sm" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-                {node.att_method || '-'}
-              </Text>
-            </Box>
-          </Group>
-        </Paper>
-
-        {/* Background */}
-        <Paper p="md" radius="md" withBorder>
-          <Group align="flex-start">
-            <ThemeIcon size="md" variant="light" color={attributeColors.background}>
-              {attributeIcons.background}
-            </ThemeIcon>
-            <Box style={{ flex: 1 }}>
-              <Text size="sm" fw={500} color="dimmed" mb="xs">
-                Latar Belakang:
-              </Text>
-              <Text size="sm" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-                {node.att_background || '-'}
-              </Text>
-            </Box>
-          </Group>
-        </Paper>
-
-        {/* Future Research */}
-        <Paper p="md" radius="md" withBorder>
-          <Group align="flex-start">
-            <ThemeIcon size="md" variant="light" color={attributeColors.future}>
-              {attributeIcons.future}
-            </ThemeIcon>
-            <Box style={{ flex: 1 }}>
-              <Text size="sm" fw={500} color="dimmed" mb="xs">
-                Penelitian Lanjut:
-              </Text>
-              <Text size="sm" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-                {node.att_future || '-'}
-              </Text>
-            </Box>
-          </Group>
-        </Paper>
-
-        {/* Research Gaps */}
-        <Paper p="md" radius="md" withBorder>
-          <Group align="flex-start">
-            <ThemeIcon size="md" variant="light" color={attributeColors.gaps}>
-              {attributeIcons.gaps}
-            </ThemeIcon>
-            <Box style={{ flex: 1 }}>
-              <Text size="sm" fw={500} color="dimmed" mb="xs">
-                Kesenjangan:
-              </Text>
-              <Text size="sm" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-                {node.att_gaps || '-'}
-              </Text>
-            </Box>
-          </Group>
-        </Paper>
-
-        {/* PDF Link */}
-        {node.att_url && (
-          <Paper p="md" radius="md" withBorder>
-            <Group align="center" justify="space-between">
-              <Group>
-                <ThemeIcon size="md" variant="light" color="gray">
-                  <IconArticle size={16} />
-                </ThemeIcon>
-                <Text size="sm">PDF Dokumen</Text>
-              </Group>
-              <Badge 
-                component="button" 
-                variant="outline"
-                color="blue"
-                size="lg"
-                style={{ cursor: 'pointer' }}
-                onClick={() => handlePdfOpen(node.att_url!, node.title || node.label)}
-              >
-                Buka PDF
-              </Badge>
-            </Group>
-          </Paper>
-        )}
-
-        {/* Modal PDF Viewer */}
-        <Modal
-          opened={opened}
-          onClose={handlePdfClose}
-          title="Lihat Artikel"
-          size="90%"
-          padding="sm"
-          centered
-          overlayProps={{ blur: 3 }}
-          styles={{
-            content: {
-              height: '90vh',
-              display: 'flex',
-              flexDirection: 'column',
-              padding: 0,
-              position: 'relative',
-            },
-            body: {
-              flex: 1,
-              overflow: 'hidden',
-              padding: 0,
-              position: 'relative',
-            },
-          }}
-        >
-          {/* ✅ FIX: Tunggu session ready sebelum render WebViewer */}
-          {selectedPDF && (
-            <div style={{ height: '100%', position: 'relative' }}>
-              {!session ? (
-                <Center h="100%">
-                  <Stack align="center" gap="md">
-                    <Loader size="lg" />
-                    <Text c="dimmed">Memuat session...</Text>
-                  </Stack>
-                </Center>
-              ) : (
-                <WebViewer 
-                  fileUrl={selectedPDF} 
-                //   onAnalytics={} 
-                  session={session} 
-                />
-              )}
-            </div>
-          )}
-        </Modal>
-      </Stack>
-    </Stack>
-  );
+  if (!node) return null;
+  return <div className={styles.nodeDetail}>
+    <section className={`${styles.detailIntro} ${styles.nodeIntro}`}>
+      <span className={styles.detailType}><IconArticle size={16} /> Artikel penelitian</span>
+      <h3>{node.title || node.label}</h3>
+      <p className={styles.detailSummary}>Tujuan, metodologi, dan konteks penelitian.</p>
+    </section>
+    <div className={styles.nodeAttributes} aria-label="Informasi penelitian">{details.map(({ key, title, icon: Icon }) => <section className={styles.nodeAttribute} key={key}>
+      <span className={styles.detailIcon}><Icon size={17} /></span><div className={styles.nodeAttributeBody}><h4>{title}</h4><p>{node[key] || "Belum ada informasi."}</p></div>
+    </section>)}</div>
+    {node.att_url && <section className={styles.pdfLink}><div><IconArticle size={17} /><strong>Dokumen PDF</strong></div><button className={styles.secondaryButton} onClick={() => handlePdfOpen(node.att_url!, node.title || node.label)} type="button"><IconExternalLink size={15} /> Buka PDF</button></section>}
+    <NativeDialog open={opened} onClose={handlePdfClose} labelledBy="node-pdf-title" className={styles.pdfDialog}>
+      <header className={styles.dialogHeader}><h2 className={styles.dialogTitle} id="node-pdf-title">Lihat artikel</h2><button className={styles.dialogClose} onClick={handlePdfClose} type="button" aria-label="Tutup PDF">×</button></header>
+      <div className={styles.pdfViewer}>{selectedPDF && (session ? <WebViewer fileUrl={selectedPDF} session={session} /> : <p className={styles.sessionLoading} role="status">Memuat sesi…</p>)}</div>
+    </NativeDialog>
+  </div>;
 }

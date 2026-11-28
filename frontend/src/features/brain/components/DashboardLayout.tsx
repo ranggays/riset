@@ -1,249 +1,222 @@
-"use client"
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { AppShell, AppShellHeader, AppShellNavbar, AppShellMain, Modal, Stack, TextInput, Textarea, Box, Text, ColorPicker, Button, Group } from "@mantine/core";
+import { useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import type { BrainstormingSessionApiResponse, BrainstormingSessionItem } from "../types";
+import { eventBus } from "@/lib/utils/eventBus";
+import { createBrainstormingSession } from "../api/brainstormingSessions";
 import { DashboardHeader } from "./DashboardHeader";
 import { DashboardNavbar } from "./DashboardNavbar";
-import { usePathname, useRouter } from "next/navigation";
-import type { BrainstormingProject, BrainstormingSessionItem } from "../types";
-import { createBrainstormingSession } from "../api/brainstormingSessions";
-import { eventBus } from "@/lib/utils/eventBus";
+import { CoverColorPicker, COVER_COLORS } from "./CoverColorPicker";
+import { NativeDialog } from "./NativeDialog";
+import { DashboardFeedbackProvider } from "./DashboardFeedback";
+import styles from "../Dashboards.module.css";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
   sidebarOpened: boolean;
   onToggleSidebar: () => void;
   mounted: boolean;
-//   projects: BrainstormingProject[];
+  fullBleed?: boolean;
   onSessionCreated?: () => void;
-  // chatHistory: ChatHistoryItem[];
-  // onChatSelect?: (chatId: number) => void;
-  // onNewChat?: () => void;
-};
+}
+
+const EMPTY_SESSION = { title: "", description: "", coverColor: COVER_COLORS[0] };
+type ColorScheme = "light" | "dark";
+const COLOR_SCHEME_KEY = "my-sre-color-scheme";
 
 export function DashboardLayout({
   children,
   sidebarOpened,
   onToggleSidebar,
   mounted,
+  fullBleed = false,
   onSessionCreated,
-  // chatHistory,
-  // onChatSelect,
-  // onNewChat,
 }: DashboardLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
-
-  const [brainstormingSessions, setBrainstormingSessions ] = useState<BrainstormingSessionItem[]>([]);
+  const [colorScheme, setColorScheme] = useState<ColorScheme>("light");
+  const [brainstormingSessions, setBrainstormingSessions] = useState<BrainstormingSessionItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [newSession, setNewSession] = useState(EMPTY_SESSION);
 
-  const [newSession, setNewSession] = useState({
-    title: '',
-    description: '',
-    coverColor: '#4c6ef5',
-  });
+  useEffect(() => {
+    if (!mounted) return;
+    const frame = window.requestAnimationFrame(() => {
+      const saved = window.localStorage.getItem(COLOR_SCHEME_KEY)
+        ?? window.localStorage.getItem("mantine-color-scheme-value");
+      if (saved === "light" || saved === "dark") setColorScheme(saved);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [mounted]);
+
+  const toggleColorScheme = () => {
+    setColorScheme((current) => {
+      const next = current === "dark" ? "light" : "dark";
+      window.localStorage.setItem(COLOR_SCHEME_KEY, next);
+      return next;
+    });
+  };
 
   const fetchBrainstormingSessions = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/brainstorming-sessions');
-      const data = await res.json();
+      const response = await fetch("/api/brainstorming-sessions");
+      if (!response.ok) throw new Error("Gagal memuat sesi brainstorming.");
 
-      if (res.ok){
-        const formatted: BrainstormingSessionItem[] = data.map((session: any) => ({
-          id: session.id,
-          title: session.title,
-          description: session.description || '',
-          coverColor: session.coverColor || '#4c6ef5',
-          lastActivity: new Date(session.lastActivity || session.updatedAt || session.createdAt).toLocaleDateString('id-ID', {
-            day: 'numeric',
-            month: 'short',
-          }),
-          active: pathname.includes(`/projects/${session.id}`),
-        }));
-
-        setBrainstormingSessions(formatted);
-      }
+      const sessions = await response.json() as BrainstormingSessionApiResponse[];
+      setBrainstormingSessions(sessions.map((session) => ({
+        id: session.id,
+        title: session.title,
+        description: session.description || "",
+        coverColor: session.coverColor || COVER_COLORS[0],
+        lastActivity: new Date(session.lastActivity || session.updatedAt || session.createdAt).toLocaleDateString("id-ID", {
+          day: "numeric",
+          month: "short",
+        }),
+        active: pathname.includes(`/projects/${session.id}`),
+      })));
     } catch (error) {
-      console.error('Gagal memuat sesi brainstorming:', error);
+      console.error("Gagal memuat sesi brainstorming:", error);
     } finally {
       setLoading(false);
     }
   }, [pathname]);
 
   useEffect(() => {
-    function handleUpdate(){
-      fetchBrainstormingSessions();
-    }
-
-    eventBus.on('sessionCreated', handleUpdate);
-    eventBus.on('sessionDeleted', handleUpdate);
-    eventBus.on('sessionUpdated', handleUpdate);
+    const handleUpdate = () => { void fetchBrainstormingSessions(); };
+    eventBus.on("sessionCreated", handleUpdate);
+    eventBus.on("sessionDeleted", handleUpdate);
+    eventBus.on("sessionUpdated", handleUpdate);
 
     return () => {
-      eventBus.off('sessionCreated', handleUpdate);
-      eventBus.off('sessionDeleted', handleUpdate);
-      eventBus.off('sessionUpdated', handleUpdate);
-    }
-  }, []);
+      eventBus.off("sessionCreated", handleUpdate);
+      eventBus.off("sessionDeleted", handleUpdate);
+      eventBus.off("sessionUpdated", handleUpdate);
+    };
+  }, [fetchBrainstormingSessions]);
 
   useEffect(() => {
-    if (mounted){
-      fetchBrainstormingSessions();
-    }
+    if (!mounted) return;
+    const timer = setTimeout(() => { void fetchBrainstormingSessions(); }, 0);
+    return () => clearTimeout(timer);
   }, [mounted, fetchBrainstormingSessions]);
+
+  const closeCreateModal = () => {
+    setCreateModalOpen(false);
+    setCreateError("");
+    setNewSession(EMPTY_SESSION);
+  };
 
   const handleSessionSelect = useCallback((sessionId: string) => {
     router.push(`/projects/${sessionId}`);
-  }, [router]);
+    if (window.matchMedia("(max-width: 768px)").matches && sidebarOpened) onToggleSidebar();
+  }, [onToggleSidebar, router, sidebarOpened]);
 
-  const handleNewSession = useCallback(() => {
-    setCreateModalOpen(true);
-  }, []);
-
-  const handleCreateSession = async () => {
+  const handleCreateSession = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     if (!newSession.title.trim()) return;
 
+    setLoading(true);
+    setCreateError("");
     try {
-      const res = await fetch('/api/brainstorming-sessions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(newSession),
-      });
-
-      const data = await res.json();
-      if (res.ok){
-        await fetchBrainstormingSessions();
-        setCreateModalOpen(false);
-        setNewSession({ title: '', description: '', coverColor: '#4c6ef5'});
-        onSessionCreated?.();
-
-        // router.push(`/projects/${data.id}`);
-      } else {
-        throw new Error('Gagal membuat sesi brainstorming');
-      }
+      await createBrainstormingSession(newSession);
+      await fetchBrainstormingSessions();
+      closeCreateModal();
+      onSessionCreated?.();
     } catch (error) {
-      console.error('Error creating session', error);
+      console.error("Error creating session", error);
+      setCreateError("Gagal membuat sesi brainstorming. Silakan coba lagi.");
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
   return (
-  <>
-    <AppShell
-      header={{ height: 70 }}
-      navbar={{
-        width: 280,
-        breakpoint: 'sm',
-        collapsed: { mobile: !sidebarOpened, desktop: !sidebarOpened },
-      }}
-      padding={0}
-    >
-      <AppShellHeader>
-        <DashboardHeader
-          sidebarOpened={sidebarOpened}
-          onToggleSidebar={onToggleSidebar}
-          mounted={mounted}
-        />
-      </AppShellHeader>
-
-      <AppShellNavbar p="lg">
-        <DashboardNavbar
-          // chatHistory={chatHistory}
-          brainstormingSessions={brainstormingSessions}
-          mounted={mounted}
-          onSessionSelect={handleSessionSelect}
-          onNewSession={handleNewSession}
-          // onChatSelect={onChatSelect}
-          // onNewChat={onNewChat}
-        />
-      </AppShellNavbar>
-
-      <AppShellMain>
-        {children}
-      </AppShellMain>
-    </AppShell>
-
-    {/* Create Session Modal */}
-    <Modal
-      opened={createModalOpen}
-      onClose={() => {
-        setCreateModalOpen(false);
-        setNewSession({ title: '', description: '', coverColor: '#4c6ef5' });
-      }}
-      title="Buat Sesi Brainstorming Baru"
-      size="md"
-    >
-    <Stack gap="md">
-      <TextInput
-        label="Judul Sesi"
-        placeholder="Masukkan judul sesi brainstorming"
-        value={newSession.title}
-        onChange={(e) => setNewSession({ ...newSession, title: e.currentTarget.value })}
-        required
-      />
-
-      <Textarea
-        label="Deskripsi (Opsional)"
-        placeholder="Jelaskan tujuan sesi brainstorming Anda"
-        value={newSession.description}
-        onChange={(e) => setNewSession({ ...newSession, description: e.currentTarget.value })}
-        minRows={3}
-      />
-
-      <Box>
-        <Text size="sm" fw={500} mb="xs">
-          Warna Cover
-        </Text>
-        <ColorPicker
-          value={newSession.coverColor}
-          onChange={(color) => setNewSession({ ...newSession, coverColor: color })}
-          withPicker={false}
-          swatches={[
-            '#4c6ef5', '#51cf66', '#ff6b6b', '#ffd43b',
-            '#9775fa', '#40c057', '#fd7e14', '#15aabf',
-            '#748ffc', '#69db7c', '#ffa8a8', '#ffe066',
-          ]}
-          swatchesPerRow={6}
-        />
-        {/* TAMBAH PREVIEW WARNA TERPILIH */}
-        <Group mt="xs" gap="xs" align="center">
-          <Text size="xs" c="dimmed">Warna terpilih:</Text>
-          <Box
-            style={{
-              width: 20,
-              height: 20,
-              borderRadius: 4,
-              backgroundColor: newSession.coverColor,
-              border: '2px solid #e9ecef',
-            }}
+    <div className={styles.workspace} data-color-scheme={colorScheme}>
+      <div className={styles.shell}>
+        <header className={styles.topbar}>
+          <DashboardHeader
+            sidebarOpened={sidebarOpened}
+            onToggleSidebar={onToggleSidebar}
+            mounted={mounted}
+            colorScheme={colorScheme}
+            onToggleColorScheme={toggleColorScheme}
           />
-          <Text size="xs" c="dimmed">{newSession.coverColor}</Text>
-        </Group>
-      </Box>
+        </header>
 
-      <Group justify="flex-end" mt="md">
-        <Button
-          variant="subtle"
-          onClick={() => {
-            setCreateModalOpen(false);
-            setNewSession({ title: '', description: '', coverColor: '#4c6ef5' });
-          }}
-        >
-          Batal
-        </Button>
-        <Button 
-          onClick={handleCreateSession} 
-          disabled={!newSession.title.trim()}
-          loading={loading}
-        >
-          Buat Sesi
-        </Button>
-      </Group>
-    </Stack>
-  </Modal>
-</>
-);
+        <div className={styles.body}>
+          {sidebarOpened && (
+            <button
+              aria-label="Tutup navigasi"
+              className={styles.mobileScrim}
+              onClick={onToggleSidebar}
+              type="button"
+            />
+          )}
+          <aside id="primary-sidebar" className={`${styles.sidebar} ${sidebarOpened ? styles.sidebarOpen : styles.sidebarCollapsed}`} aria-label="Navigasi utama">
+            <DashboardNavbar
+              brainstormingSessions={brainstormingSessions}
+              loading={loading}
+              mounted={mounted}
+              isCollapsed={!sidebarOpened}
+              onSessionSelect={handleSessionSelect}
+              onNewSession={() => {
+                setCreateError("");
+                setCreateModalOpen(true);
+              }}
+            />
+          </aside>
+
+          <main className={`${styles.main} ${fullBleed ? styles.mainFullBleed : ""}`}><DashboardFeedbackProvider>{children}</DashboardFeedbackProvider></main>
+        </div>
+      </div>
+
+      <NativeDialog open={createModalOpen} onClose={closeCreateModal} labelledBy="new-session-title">
+        <div className={styles.dialogHeader}>
+          <div>
+            <h2 className={styles.dialogTitle} id="new-session-title">Buat Sesi Brainstorming Baru</h2>
+            <p className={styles.muted}>Mulai ruang kerja baru untuk ide dan riset Anda.</p>
+          </div>
+          <button className={styles.dialogClose} type="button" onClick={closeCreateModal} aria-label="Tutup dialog">×</button>
+        </div>
+        <form className={styles.dialogForm} onSubmit={handleCreateSession}>
+          <label className={styles.formField}>
+            <span className={styles.fieldLabel}>Judul Sesi</span>
+            <input
+              autoFocus
+              className={styles.fieldInput}
+              onChange={(event) => setNewSession((current) => ({ ...current, title: event.currentTarget.value }))}
+              placeholder="Masukkan judul sesi brainstorming"
+              required
+              value={newSession.title}
+            />
+          </label>
+          <label className={styles.formField}>
+            <span className={styles.fieldLabel}>Deskripsi (Opsional)</span>
+            <textarea
+              className={styles.fieldTextarea}
+              onChange={(event) => setNewSession((current) => ({ ...current, description: event.currentTarget.value }))}
+              placeholder="Jelaskan tujuan sesi brainstorming Anda"
+              value={newSession.description}
+            />
+          </label>
+          <CoverColorPicker
+            label="Warna Cover"
+            onChange={(coverColor) => setNewSession((current) => ({ ...current, coverColor }))}
+            value={newSession.coverColor}
+          />
+          {createError && <p className={styles.formError} role="alert">{createError}</p>}
+          <div className={styles.dialogActions}>
+            <button className={styles.quietButton} onClick={closeCreateModal} type="button">Batal</button>
+            <button className={styles.primaryButton} disabled={!newSession.title.trim() || loading} type="submit">
+              {loading ? "Membuat..." : "Buat Sesi"}
+            </button>
+          </div>
+        </form>
+      </NativeDialog>
+    </div>
+  );
 }
