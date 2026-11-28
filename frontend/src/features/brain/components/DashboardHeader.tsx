@@ -1,237 +1,142 @@
-"use client"
+"use client";
 
-import { Container, Flex, Group, Box, Text, ActionIcon, Tooltip, Menu, Avatar, Burger, ThemeIcon, useMantineColorScheme, Image } from "@mantine/core";
-import { IconNetwork, IconSettings, IconSun, IconMoon, IconUser, IconLogout, IconHelp, IconPlayerStop, IconPlayerRecord } from "@tabler/icons-react";
-import { useState, useEffect } from "react";
-import { HelpGuideModal } from "./HelpGuideModal";
+import { useEffect, useState } from "react";
+import { IconHelp, IconLogout, IconMenu2, IconMoon, IconSun, IconUser } from "@tabler/icons-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authLogout } from "../api/auth";
 import { getUser } from "../api/brainstormingSessions";
+import { HelpGuideModal } from "./HelpGuideModal";
+import styles from "../Dashboards.module.css";
 
 interface DashboardHeaderProps {
-    sidebarOpened: boolean;
-    onToggleSidebar: () => void;
-    mounted: boolean;
-};
+  sidebarOpened: boolean;
+  onToggleSidebar: () => void;
+  mounted: boolean;
+  colorScheme: "light" | "dark";
+  onToggleColorScheme: () => void;
+}
 
-export function DashboardHeader({ sidebarOpened, onToggleSidebar, mounted }: DashboardHeaderProps) {
-  const { colorScheme, toggleColorScheme } = useMantineColorScheme()
-  const dark = mounted ? colorScheme === "dark" : false
+interface UserData {
+  name: string;
+  email: string;
+}
 
-  const [userData, setUserData] = useState<{ name: string; email: string } | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+export function DashboardHeader({ sidebarOpened, onToggleSidebar, mounted, colorScheme, onToggleColorScheme }: DashboardHeaderProps) {
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [logoutError, setLogoutError] = useState("");
   const [helpModalOpened, setHelpModalOpened] = useState(false);
   const router = useRouter();
+  const dark = mounted && colorScheme === "dark";
 
   useEffect(() => {
-    if (!mounted) return
+    if (!mounted) return;
+    let active = true;
 
     const fetchUserData = async () => {
       try {
         const response = await getUser();
-        console.log("Response User:", response);
-        setUserData({
-          name: response.user.name || "Unknown User",
-          email: response.user.email || "No email",
-        });
+        if (active) {
+          setUserData({
+            name: response.user.name || "Unknown User",
+            email: response.user.email || "No email",
+          });
+        }
       } catch (error) {
-        console.error("Failed to fetch user:", error)
+        console.error("Failed to fetch user:", error);
       } finally {
-        setIsLoading(false)
+        if (active) setIsLoading(false);
       }
-    }
+    };
 
-    fetchUserData()
-  }, [mounted])
+    void fetchUserData();
+    return () => { active = false; };
+  }, [mounted]);
 
   const handleLogout = async () => {
+    setLogoutError("");
+    setIsLoading(true);
     try {
-      setIsLoading(true)
-
       await authLogout();
       router.push("/login");
     } catch (error) {
-      console.error("Logout gagal:", error)
-      setIsLoading(false)
+      console.error("Logout gagal:", error);
+      setLogoutError("Logout gagal. Silakan coba lagi.");
+      setIsLoading(false);
     }
-  }
-
-  if (!mounted) {
-    return (
-      <Container fluid h="100%" px="xl">
-        <Flex h="100%" justify="space-between" align="center">
-          <Group gap="md">
-            <Burger opened={false} onClick={() => {}} size="sm" />
-            <Group gap="xs">
-              <ThemeIcon variant="gradient" gradient={{ from: "blue", to: "cyan", deg: 45 }} size="lg" radius="md">
-                <IconNetwork size={20} />
-              </ThemeIcon>
-              <Box>
-                <Text fw={800} size="xl" variant="gradient" gradient={{ from: "blue", to: "cyan", deg: 45 }}>
-                  mySRE
-                </Text>
-                <Text size="xs" c="dimmed">
-                  Knowledge Visualization Platform
-                </Text>
-              </Box>
-            </Group>
-          </Group>
-          <Group gap="sm">
-            <ActionIcon variant="light" color="blue" size="lg" radius="md" disabled>
-              <IconMoon size={18} />
-            </ActionIcon>
-          </Group>
-        </Flex>
-      </Container>
-    )
-  }
+  };
 
   return (
     <>
-    <Container fluid h="100%" px="xl">
-      <Flex h="100%" justify="space-between" align="center">
-        <Group gap="md">
-          <Burger opened={sidebarOpened} onClick={onToggleSidebar} size="sm" />
-          <Group gap="xs">
-            {/* <ThemeIcon variant="gradient" gradient={{ from: "blue", to: "cyan", deg: 45 }} size="lg" radius="md">
-              <IconNetwork size={20} />
-            </ThemeIcon> */}
-            <Box>
-              {/* <Text fw={800} size="xl" variant="gradient" gradient={{ from: "blue", to: "cyan", deg: 45 }}>
-                mySRE
-              </Text>
-              <Text size="xs" c="dimmed">
-                Knowledge Visualization Platform
-              </Text> */}
-              <Image
-                src='/images/logoSRE_IDE.png'
-                alt="My-SRE Logo"
-                width={160}
-                height={50}
-                fit="contain"
-                style={{ alignSelf: "flex-start" }}
-              />
-            </Box>
-          </Group>
-        </Group>
-
-        <Group gap="sm">
-          {/* <Tooltip
-            label={isSessionActive ? "Hentikan Sesi (Lacak & Rekam)" : "Mulai Sesi (Lacak & Rekam)"}
-            position="bottom"
-            withArrow
+      <div className={styles.headerInner}>
+        <div className={styles.topbarLeading}>
+          <button
+            aria-controls="primary-sidebar"
+            aria-expanded={sidebarOpened}
+            aria-label={sidebarOpened ? "Ciutkan navigasi" : "Buka navigasi"}
+            className={styles.iconButton}
+            onClick={onToggleSidebar}
+            type="button"
           >
-            <ActionIcon
-              variant={isSessionActive ? "filled" : "light"}
-              color={isSessionActive ? "red" : "teal"}
-              onClick={isSessionActive ? stopSession : startSession} // Gunakan fungsi master
-              size="lg"
-              radius="md"
-            >
-              {isSessionActive ? <IconPlayerStop size={18} /> : <IconPlayerRecord size={18} />}
-            </ActionIcon>
-          </Tooltip> */}
+            <IconMenu2 size={19} aria-hidden="true" />
+          </button>
+          <Link className={styles.brand} href="/" aria-label="Riset">
+            <span className={styles.brandSeal} aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+                <circle cx="16" cy="16" r="12" stroke="currentColor" strokeWidth="1.8" strokeDasharray="2.5 2.5" />
+                <path d="m11.5 16.5 3 3 6-6.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+            <span className={styles.brandName}>Riset</span>
+            <span className={styles.brandCaption}>Ruang Kerja Riset</span>
+          </Link>
+        </div>
 
-          <Tooltip 
-              label="Panduan Penggunaan" 
-              position="bottom"
-              withArrow
-            >
-              <ActionIcon
-                variant="gradient"
-                gradient={{ from: "blue", to: "cyan", deg: 45 }}
-                onClick={() => setHelpModalOpened(true)}
-                size="lg"
-                radius="md"
-                style={{
-                  transition: "all 0.2s ease",
-                  animation: "pulse 2s infinite"
-                }}
-              >
-                <IconHelp size={18} />
-              </ActionIcon>
-          </Tooltip>
-            
-          <Tooltip label={dark ? "Light mode" : "Dark mode"}>
-            <ActionIcon
-              variant="light"
-              color={dark ? "yellow" : "blue"}
-              onClick={toggleColorScheme}
-              size="lg"
-              radius="md"
-            >
-              {dark ? <IconSun size={18} /> : <IconMoon size={18} />}
-            </ActionIcon>
-          </Tooltip>
+        <div className={styles.topbarActions}>
+          <button
+            aria-label="Panduan Penggunaan"
+            className={styles.iconButton}
+            onClick={() => setHelpModalOpened(true)}
+            title="Panduan Penggunaan"
+            type="button"
+          >
+            <IconHelp size={18} aria-hidden="true" />
+          </button>
+          <button
+            aria-label={dark ? "Ganti ke tema terang" : "Ganti ke tema gelap"}
+            className={styles.iconButton}
+            disabled={!mounted}
+            onClick={onToggleColorScheme}
+            title={dark ? "Tema terang" : "Tema gelap"}
+            type="button"
+          >
+            {dark ? <IconSun size={18} aria-hidden="true" /> : <IconMoon size={18} aria-hidden="true" />}
+          </button>
 
-          <Tooltip label="Settings">
-            <ActionIcon variant="light" color="gray" size="lg">
-              <IconSettings size={18} />
-            </ActionIcon>
-          </Tooltip>
+          <details className={styles.profileMenu}>
+            <summary className={styles.profileTrigger} aria-label="Menu pengguna">
+              <span className={styles.profileMonogram} aria-hidden="true">
+                {isLoading ? "…" : userData?.name?.charAt(0).toUpperCase() || <IconUser size={15} />}
+              </span>
+              <span className={styles.profileTriggerText}>{userData?.name || "Akun"}</span>
+            </summary>
+            <div className={styles.profileDropdown}>
+              <div className={styles.profileIdentity}>
+                <strong>{isLoading ? "Loading..." : userData?.name || "Unknown User"}</strong>
+                <span>{isLoading ? "Loading..." : userData?.email || "No email"}</span>
+                <span>Signed in as</span>
+              </div>
+              {logoutError && <p className={styles.formError} role="alert">{logoutError}</p>}
+              <button className={`${styles.menuButton} ${styles.menuDanger}`} disabled={isLoading} onClick={handleLogout} type="button">
+                <IconLogout size={16} aria-hidden="true" /> Sign out
+              </button>
+            </div>
+          </details>
+        </div>
+      </div>
 
-          <Menu shadow="lg" width={220} position="bottom-end" offset={10}>
-            <Menu.Target>
-              <ActionIcon variant="light" size="lg" radius="xl">
-                <Avatar
-                  size="sm"
-                  radius="xl"
-                  variant="gradient"
-                  gradient={{ from: "blue", to: "cyan", deg: 45 }}
-                  style={{ cursor: "pointer" }}
-                >
-                  {isLoading ? "..." : userData?.name?.charAt(0).toUpperCase() || <IconUser size={16} />}
-                </Avatar>
-              </ActionIcon>
-            </Menu.Target>
-
-            <Menu.Dropdown>
-              <Menu.Label>
-                <Group gap="xs">
-                  <Avatar size="xs" color="blue">
-                    {userData?.name?.charAt(0).toUpperCase() || "U"}
-                  </Avatar>
-                  <Text size="sm">Signed in as</Text>
-                </Group>
-              </Menu.Label>
-
-              <Menu.Item>
-                <Text size="sm" fw={600}>
-                  {isLoading ? "Loading..." : userData?.name || "Unknown User"}
-                </Text>
-                <Text size="xs" c="dimmed">
-                  {isLoading ? "Loading..." : userData?.email || "No email"}
-                </Text>
-              </Menu.Item>
-
-              <Menu.Divider />
-
-              <Menu.Item leftSection={<IconLogout size={16} />} color="red" onClick={handleLogout} disabled={isLoading}>
-                Sign out
-              </Menu.Item>
-            </Menu.Dropdown>
-          </Menu>
-        </Group>
-      </Flex>
-    </Container>
-
-    {/* Help Guide Modal */}
-      <HelpGuideModal 
-        opened={helpModalOpened} 
-        onClose={() => setHelpModalOpened(false)} 
-      />
-
-      {/* CSS untuk animasi pulse */}
-      <style jsx>{`
-        @keyframes pulse {
-          0%, 100% {
-            box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
-          }
-          50% {
-            box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
-          }
-        }
-      `}</style>
+      <HelpGuideModal opened={helpModalOpened} onClose={() => setHelpModalOpened(false)} />
     </>
-  )
+  );
 }

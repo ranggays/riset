@@ -1,8 +1,7 @@
-"use client"
+﻿"use client"
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { Box, Button, Checkbox, Grid, Group, MultiSelect, Text, Modal, Badge, Paper, ActionIcon, Stack, Card, ThemeIcon, Container, useMantineColorScheme, useMantineTheme, Loader, Select, TextInput, Textarea, ScrollArea } from "@mantine/core";
-import { IconNetwork, IconFilter, IconCircleDot, IconBrandHipchat, IconSearch, IconEye, IconUpload, IconChevronLeft, IconMessage, IconHighlight } from "@tabler/icons-react";
+import { IconFilter, IconCircleDot, IconBrandHipchat, IconSearch, IconEye, IconUpload, IconChevronLeft, IconMessage, IconHighlight } from "@tabler/icons-react";
 import { type ExtendedNode, type ExtendedEdge } from "./types";
 import NetworkGraph from "./components/project/NetworkGraph";
 import ChatPanel from "./components/project/ChatPanel";
@@ -10,13 +9,14 @@ import NodeDetail from "./components/project/NodeDetail";
 import EdgeDetail from "./components/project/EdgeDetail";
 import { DashboardLayout } from "./components/DashboardLayout";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
-import { notifications } from "@mantine/notifications";
+import { notifyDashboard } from "./components/DashboardFeedback";
 import AnnotationPanel from "./components/project/AnnotationPanel";
 import ArticleDetailTable from "./components/project/ArticleDetailTable";
 import { Cite } from "@citation-js/core";
 import "@citation-js/plugin-ris";
-import { createClient } from "@/lib/supabase/client";
 import { RealUploadProgress } from "./components/project/RealTimeUploadProgress";
+import { NativeDialog } from "./components/NativeDialog";
+import styles from "./Dashboard.module.css";
 
 const relationMapping = {
   'background': 'same_background',
@@ -74,11 +74,7 @@ export default function Dashboard() {
   const searchParams = useSearchParams();
   const fullPath = `${pathname}?${searchParams.toString()}`;
 
-  const { colorScheme } = useMantineColorScheme();
-  const theme = useMantineTheme();
-
   const [mounted, setMounted] = useState(false);
-  const dark = mounted ? colorScheme === 'dark' : false;
  
 
   const [sidebarOpened, setSidebarOpened] = useState(false);
@@ -95,18 +91,13 @@ export default function Dashboard() {
     'goal',
   ]);
   const [activeArticles, setActiveArticles] = useState<string[]>([]);
+  const [articleSearchQuery, setArticleSearchQuery] = useState("");
   const [nodes, setNodes] = useState<ExtendedNode[]>([]);
   const [edges, setEdges] = useState<ExtendedEdge[]>([]);
   
   const [isLoadingSession, setIsLoadingSession] = useState(true);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
-  const [graph, setGraph] = useState<'visjs' | 'neovisjs'>('visjs');
-  const [neo4jData, setNeo4jData] = useState<{nodes: any[], edges: any[]}>({nodes: [], edges: []});
-  const [graphKey, setGraphKey] = useState(0);
-  const graphContainerRef = useRef<HTMLDivElement>(null);
-
-  const [previousGraph, setPreviousGraph] = useState<'visjs' | 'neovisjs'>('visjs');
   const [uploadModalOpened, setUploadModalOpened] = useState(false);
   const [uploadForm, setUploadForm] = useState({
     title: '',
@@ -132,47 +123,9 @@ export default function Dashboard() {
   const [isProcessingRis, setIsProcessingRis] = useState(false);
   const risFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<Record<string, unknown> | null>(null);
 
   const [currentUploadId, setCurrentUploadId] = useState<string | null>(null);
-
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-
-  const VideoPreview = ({stream}: {stream: MediaStream | null}) => {
-    const videoRef = useRef<HTMLVideoElement>(null);
-
-    useEffect(() => {
-      if (videoRef.current && stream){
-        videoRef.current.srcObject = stream;
-      }
-    }, [stream]);
-
-    if (!stream){
-      return null;
-    }
-
-    return(
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        style={{
-          position: 'fixed',
-          bottom: '20px',
-          right: '20px',
-          width: '150px',
-          height: '150px',
-          borderRadius: '50%',
-          objectFit: 'cover',
-          border: '3px solid #fff',
-          boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
-          zIndex: 1000,
-        }}
-      >
-      </video>
-    )
-  }
 
   useEffect(() => {
     const getSessionFromAPI = async () => {
@@ -216,11 +169,11 @@ export default function Dashboard() {
 
     const parsedData = {
       title: data.title || '',
-      author: data.author ? 
-        data.author.map((author: any) => 
+      author: data.author ?
+        data.author.map((author: { given?: string; family?: string }) =>
           `${author.given || ''} ${author.family || ''}`.trim()
         ).join(', ') : '',
-      year: data.issued ? 
+      year: data.issued ?
         data.issued['date-parts']?.[0]?.[0]?.toString() || '' : '',
       abstract: data.abstract || '',
       keywords: data.keyword ? 
@@ -239,7 +192,7 @@ export default function Dashboard() {
 
   const parseRisFileManual = (risContent: string) => {
     const lines = risContent.split('\n');
-    const parsedData: any = {};
+    const parsedData: Record<string, string> = {};
 
     for (const line of lines) {
       const trimmed = line.trim();
@@ -270,12 +223,7 @@ export default function Dashboard() {
     if (!file) return;
 
     if (!file.name.endsWith('.ris')) {
-      notifications.show({
-        title: 'Format tidak didukung',
-        message: 'Mohon upload file RIS',
-        color: 'yellow',
-        position: 'top-right',
-      });
+      notifyDashboard('Format tidak didukung', 'Mohon upload file RIS');
       return;
     }
 
@@ -295,19 +243,9 @@ export default function Dashboard() {
         doi: parsedData.doi || '',
       });
 
-      notifications.show({
-        title: 'RIS berhasil diproses',
-        message: 'Data artikel telah diisi otomatis',
-        color: 'green',
-        position: 'top-right',
-      });
+      notifyDashboard('RIS berhasil diproses', 'Data artikel telah diisi otomatis');
     } catch (error) {
-      notifications.show({
-        title: 'Error parsing RIS',
-        message: 'Gagal memproses file RIS',
-        color: 'red',
-        position: 'top-right',
-      });
+      notifyDashboard('Error parsing RIS', 'Gagal memproses file RIS', true);
     } finally {
       setIsProcessingRis(false);
       e.target.value = '';
@@ -337,17 +275,12 @@ export default function Dashboard() {
         const text = await res.text();
         throw new Error(`Upload failed: ${text}`);
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
 
       setUpLoading(false);
       setCurrentUploadId(null);
 
-      notifications.show({
-        title: 'Upload Gagal',
-        message: error.message || 'Terjadi kesalahan saat upload',
-        color: 'red',
-        position: 'top-right',
-      });
+      notifyDashboard('Upload Gagal', error instanceof Error ? error.message : 'Terjadi kesalahan saat upload', true);
     }
   };
 
@@ -368,132 +301,13 @@ export default function Dashboard() {
 
 
   useEffect(() => {
-    setMounted(true);
+    const frame = window.requestAnimationFrame(() => setMounted(true));
+    return () => window.cancelAnimationFrame(frame);
   }, []);
-
-  useEffect(() => {
-  if (activeTab !== 'chat') {
-    setResetChatContext(true)
-  }
-}, [activeTab]);
 
   const handleContextReset = () => {
     setResetChatContext(false);
   }
-
-  const cleanupNavigationButtons = useCallback(() => {
-  const navigationSelectors = [
-    '.neovis-navigation',
-    '.neovis-controls',
-    '.neovis-toolbar',
-    '[class*="navigation"]',
-    '[class*="control"]',
-    '[class*="toolbar"]',
-    '[class*="zoom"]',
-    '[class*="pan"]',
-    'button[title*="zoom"]',
-    'button[title*="pan"]',
-    'button[title*="fit"]',
-    'button[title*="center"]',
-    'svg[class*="control"]',
-    'svg[class*="navigation"]',
-    '.floating-button',
-    '.graph-controls',
-    'button[style*="position: absolute"]',
-    'button[style*="position: fixed"]',
-    'div[style*="position: absolute"][style*="button"]',
-    'div[style*="position: fixed"][style*="button"]'
-  ];
-
-  navigationSelectors.forEach(selector => {
-    try {
-      const elements = document.querySelectorAll(selector);
-      elements.forEach(el => {
-        const isNavButton = el.textContent?.includes('→') || el.textContent?.includes('↓') || el.textContent?.includes('-') || el.textContent?.includes('+') || el.getAttribute('title')?.toLowerCase().includes('zoom') || el.getAttribute('title')?.toLowerCase().includes('pan') || el.getAttribute('aria-label')?.toLowerCase().includes('navigation');
-        
-        if (isNavButton || selector.includes('navigation') || selector.includes('control')) {
-          el.remove();
-        }
-      });
-    } catch (e) {
-      console.warn(`Could not clean selector: ${selector}`, e);
-    }
-  });
-
-  const allButtons = document.querySelectorAll('button, div[role="button"], span[role="button"]');
-  allButtons.forEach(button => {
-    const text = button.textContent?.trim();
-    const title = button.getAttribute('title');
-    const ariaLabel = button.getAttribute('aria-label');
-    
-    const navigationPatterns = [
-      '→', '←', '↑', '↓', // Arrow symbols
-      '⊕', '⊖', // Plus/minus in circle
-      '🔍', '🔎', // Magnifying glass
-      '+', '-', // Simple plus minus
-      'zoom', 'pan', 'fit', 'center', 'reset' // Keywords
-    ];
-    
-    const isNavigationButton = navigationPatterns.some(pattern => 
-      text?.includes(pattern) || 
-      title?.toLowerCase().includes(pattern.toLowerCase()) ||
-      ariaLabel?.toLowerCase().includes(pattern.toLowerCase())
-    );
-    
-    if (isNavigationButton) {
-      const isPartOfMainUI = button.closest('.mantine-Card-root') || button.closest('.mantine-Grid-col') || button.closest('[data-mantine-component]');
-      
-      if (!isPartOfMainUI) {
-        button.remove();
-      }
-    }
-  });
-
-    const cleanupAttempts = [100, 300, 500, 1000];
-
-    cleanupAttempts.forEach(delay => {
-      setTimeout(() => {
-
-      }, delay)
-    });
-
-  return () => {
-    cleanupNavigationButtons();
-
-    if (graphContainerRef.current){
-      graphContainerRef.current.innerHTML = '';
-    }
-
-    const neoElements = document.querySelectorAll('[id*="neo"], [class*="neo"], [data-neo]');
-    neoElements.forEach(el => el.remove());
-  }
-
-  }, []);
-
-  useEffect(() => {
-    cleanupNavigationButtons();
-  }, [router, cleanupNavigationButtons]);
-
-  useEffect(() => {
-  return () => {
-    if (graphContainerRef.current) {
-      graphContainerRef.current.innerHTML = '';
-    }
-    
-    const neoElements = document.querySelectorAll('[id*="neo"], [class*="neo"], [data-neo]');
-    neoElements.forEach(el => el.remove());
-  };
-}, []);
-
-  useEffect(() => {
-    if (graph === 'visjs' && previousGraph === 'neovisjs') {
-      const timeoutId = setTimeout(() => {
-        cleanupNavigationButtons();
-      }, 300); 
-
-      return () => clearTimeout(timeoutId);
-    }
-  }, [activeRelations, activeArticles, graph, previousGraph, cleanupNavigationButtons]);
 
   const handleToggleSidebar = useCallback(() => {
     setSidebarOpened((o) => !o);
@@ -524,90 +338,14 @@ export default function Dashboard() {
     });
   }, [activeRelations, edges, filteredNodes, isLoadingSession, isLoadingData]);
 
-  useEffect(() => {
-    if (graph === 'visjs' && previousGraph === 'neovisjs' && (filteredNodes.length > 0 || filteredEdges.length > 0)) {
-        const cleanupTimeout = setTimeout(() => {
-            cleanupNavigationButtons();
-        }, 100);
-
-        return () => clearTimeout(cleanupTimeout);
-    }
-  }, [filteredNodes, filteredEdges, graph, previousGraph, cleanupNavigationButtons]);
-
-  useEffect(() => {
-    if (graph === 'visjs' && previousGraph === 'neovisjs') {
-      const observer = new MutationObserver((mutations) => {
-        let shouldCleanup = false;
-        
-        mutations.forEach((mutation) => {
-          mutation.addedNodes.forEach((node) => {
-            if (node.nodeType === Node.ELEMENT_NODE) {
-              const element = node as Element;
-              
-              const tagName = element.tagName.toLowerCase();
-              const isButton = tagName === 'button' || element.getAttribute('role') === 'button' || tagName === 'div' && element.tagName === 'pointer';
-              
-              if (isButton) {
-                const text = element.textContent?.trim();
-                const className = element.className;
-                const id = element.id;
-                
-                const isNavButton = ['→', '←', '↑', '↓', '+', '-', '⊕', '⊖'].some(symbol => text?.includes(symbol)) || className.includes('nav') || className.includes('control') || className.includes('zoom') || className.includes('pan') || id.includes('nav') || id.includes('control');
-                
-                if (isNavButton) {
-                  const isPartOfMainUI = element.closest('.mantine-Card-root') || element.closest('.mantine-Grid-col') || element.closest('[data-mantine-component]');
-                  
-                  if (!isPartOfMainUI) {
-                    shouldCleanup = true;
-                  }
-                }
-              }
-            }
-          });
-        });
-
-        if (shouldCleanup) {
-          setTimeout(() => {
-            cleanupNavigationButtons();
-          }, 50);
-        }
-      });
-
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-        attributes: false,
-        attributeOldValue: false
-      });
-
-      return () => observer.disconnect();
-    }
-  }, [graph, previousGraph, cleanupNavigationButtons]);
-
   const handleRelationChange = useCallback((relation: string, checked: boolean) => {
-    if (checked) {
-      setActiveRelations([...activeRelations, relation]);
-    } else {
-      setActiveRelations(activeRelations.filter(r => r !== relation));
-    }
-    
-    if (graph === 'visjs' && previousGraph === 'neovisjs') {
-      setTimeout(() => {
-        cleanupNavigationButtons();
-      }, 200);
-    }
-  }, [activeRelations, graph, previousGraph, cleanupNavigationButtons]);
+    setActiveRelations((current) => checked ? [...current, relation] : current.filter((item) => item !== relation));
+  }, []);
 
   const handleArticleSelectionChange = useCallback((selectedArticles: string[]) => {
     setActiveArticles(selectedArticles);
     setSelectedNode(null);
-    
-    if (graph === 'visjs' && previousGraph === 'neovisjs') {
-      setTimeout(() => {
-        cleanupNavigationButtons();
-      }, 200);
-    }
-  }, [graph, previousGraph, cleanupNavigationButtons]);
+  }, []);
 
   const fetchData = async () => {
     try {
@@ -622,7 +360,7 @@ export default function Dashboard() {
       const nodesData = await nodesRes.json();
       const edgesData = await edgesRes.json();
 
-      const mappedNodes = nodesData.map((node: any) => {
+      const mappedNodes = nodesData.map((node: ExtendedNode) => {
         const fullLabel = node.title || node.label || `Node ${node.id}`;
         const truncatedLabel = fullLabel.length > 30 
           ? fullLabel.substring(0, 10) + '...' 
@@ -637,14 +375,14 @@ export default function Dashboard() {
 
       setNodes(mappedNodes);
 
-      const mappedEdges = edgesData.map((edge: any) => ({
+      const mappedEdges = edgesData.map((edge: ExtendedEdge & { fromId?: string; toId?: string }) => ({
         id: edge.id,
         from: edge.fromId,
         to: edge.toId,
         label: edge.label,
         relation: edge.relation || 'unknown',
         arrows: 'to',
-        color: { color: getRelationColor(edge.relation) || 'gray' },
+        color: { color: getRelationColor(edge.relation || '') || 'gray' },
         font: { color: 'black', background: 'white' },
       }));
 
@@ -753,12 +491,7 @@ export default function Dashboard() {
     if (!file) return;
 
     if (!file.name.endsWith('.pdf')){
-      notifications.show({
-        title: 'Format tidak didukung',
-        message: 'Mohon upload file PDF',
-        color: 'yellow',
-        position: 'top-right',
-      });
+      notifyDashboard('Format tidak didukung', 'Mohon upload file PDF');
       return;
     }
 
@@ -803,7 +536,7 @@ export default function Dashboard() {
         throw new Error(`Upload failed: ${text}`);
       };
 
-      let data: any = {};
+      let data: Record<string, unknown> = {};
       if (contentType?.includes("application/json")){
         data = await res.json();
         console.log('File uploaded:', data);
@@ -812,17 +545,12 @@ export default function Dashboard() {
         console.log('Unexpected response:', text);
       }
 
-    } catch (error: any) {
+    } catch (error: unknown) {
 
       setUpLoading(false);
       setCurrentUploadId(null);
 
-      notifications.show({
-        title: 'Upload Gagal',
-        message: error.message || 'Terjadi Kesalahan saat upload',
-        color: 'red',
-        position: 'top-right',
-      });
+      notifyDashboard('Upload Gagal', error instanceof Error ? error.message : 'Terjadi Kesalahan saat upload', true);
       console.error('File upload error:', error);
     }
   };
@@ -833,13 +561,7 @@ export default function Dashboard() {
     
     await new Promise(resolve => setTimeout(resolve, 1000));
   
-    notifications.show({
-      id: 'upload-success',
-      title: 'Berhasil',
-      message: `File "${selectedFile?.name}" berhasil diunggah dan diproses`,
-      color: 'green',
-      position: 'top-right',
-    });
+    notifyDashboard('Berhasil', `File "${selectedFile?.name}" berhasil diunggah dan diproses`);
 
     setUploadModalOpened(false);
     setSelectedFile(null);
@@ -856,704 +578,101 @@ export default function Dashboard() {
   };
 
   if (!mounted || isLoadingSession || isLoadingData) {
-    return (
-      <DashboardLayout
-        sidebarOpened={false}
-        onToggleSidebar={() => {}}
-        mounted={false}
-        // chatHistory={chatHistory}
-        // onChatSelect={handleChatSelect}
-        // onNewChat={handleNewChat}
-      >
-        <Container fluid h="100%" p="xl">
-          <Card shadow="sm" padding="xl" radius="lg" h="100%" withBorder>
-            <Stack align="center" justify="center" h="100%">
-              <Loader size="lg" />
-              <Text size="lg" fw={500}>
-                {isLoadingData && isLoadingSession 
-                  ? 'Memuat data dan sesi...' 
-                  : isLoadingData 
-                    ? 'Memuat data artikel...' 
-                    : 'Memuat pengaturan sesi...'}
-              </Text>
-              <Text size="sm" c="dimmed">
-                Mohon tunggu sebentar
-              </Text>
-            </Stack>
-          </Card>
-        </Container>
-      </DashboardLayout>
-    );
+    return <DashboardLayout sidebarOpened={false} onToggleSidebar={() => {}} mounted={false} fullBleed>
+      <section className={styles.loadingState} aria-live="polite">
+        <span className={styles.spinner} aria-hidden="true" />
+        <h1>{isLoadingData && isLoadingSession ? "Memuat data dan sesi…" : isLoadingData ? "Memuat data artikel…" : "Memuat pengaturan sesi…"}</h1>
+        <p>Mohon tunggu sebentar.</p>
+      </section>
+    </DashboardLayout>;
   }
 
-  return (
-    <>
-        <VideoPreview stream={cameraStream} />
-        <DashboardLayout
-        sidebarOpened={sidebarOpened}
-        onToggleSidebar={handleToggleSidebar}
-        mounted={mounted}
-        //   chatHistory={chatHistory}
-        //   onChatSelect={handleChatSelect}
-        //   onNewChat={handleNewChat}
-        >
-        <Container fluid h="100%" p="xl">
-            <Grid h="100%">
-            {/* Network Visualization Panel */}
-            <Grid.Col span={{ base: 12, lg: 6 }} h="100%">
-                <Card 
-                shadow="sm" 
-                padding="lg" 
-                radius="lg" 
-                h="100%" 
-                withBorder
-                style={{ display: 'flex', flexDirection: 'column' }}
-                >
-                <Group justify="space-between" mb="lg">
-                    <Group gap="xs">
-                    <ThemeIcon variant="light" color="blue" size="lg">
-                        <IconCircleDot size={20} />
-                    </ThemeIcon>
-                    <Box>
-                        <Text size="xl" fw={700}>Peta Konsep</Text>
-                        <Text size="sm" c="dimmed">Visualisasi Artikel Penelitian</Text>
-                    </Box>
-                    </Group>
+  const closeNodeDetail = () => {
+    setDetailModalNode(null);
+    if (edgeDetailReturn) {
+      setDetailModalEdge(edgeDetailReturn);
+      setEdgeDetailReturn(null);
+    }
+  };
 
-                    <Group gap="sm">
-                    {/* <input
-                            ref={fileInputRef}
-                            type="file"
-                            style={{ display: 'none'}}
-                            onChange={onFileChange}
-                            accept="application/pdf"
-                    /> */}
-                    {/* Dropdown View Mode */}
-                    <Select
-                        value={viewMode}
-                        onChange={(value) => setViewMode(value as 'graph' | 'detail')}
-                        data={[
-                        { 
-                            value: 'graph', 
-                            label: 'Graph',
-                            // leftSection: <IconChartDots2 size={16} />
-                        },
-                        { 
-                            value: 'detail', 
-                            label: 'Tabel',
-                            // leftSection: <IconList size={16} />
-                        },
-                        ]}
-                        size="sm"
-                        radius="md"
-                        withCheckIcon={false}
-                        w={120}
-                        styles={{
-                        input: {
-                            backgroundColor: dark ? theme.colors.dark[6] : 'white',
-                            border: `1px solid ${dark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
-                            fontSize: theme.fontSizes.sm,
-                            fontWeight: 500
-                        },
-                        section: {
-                            pointerEvents: 'none'
-                        }
-                        }}
-                    />
+  return <DashboardLayout sidebarOpened={sidebarOpened} onToggleSidebar={handleToggleSidebar} mounted={mounted} fullBleed>
+    <div className={styles.dashboardPage}>
+      <div className={styles.dashboardHeading}>
+        <div><p className={styles.eyebrow}>RUANG KERJA RISET</p><h1>{session?.projectId ? "Peta riset" : "Dashboard"}</h1><p>Jelajahi hubungan antarartikel dan diskusikan temuan bersama AI.</p></div>
+        <button className={styles.secondaryButton} onClick={() => router.push(`/projects/${sessionId}/articles`)} type="button"><IconEye size={17} /> Lihat artikel</button>
+      </div>
+      <div className={styles.dashboardGrid}>
+        <section className={`${styles.panel} ${styles.researchPanel}`} aria-labelledby="map-title">
+          <header className={styles.panelHeader}>
+            <div className={styles.panelTitle}><span className={styles.iconTile}><IconCircleDot size={19} /></span><div><h2 id="map-title">Peta konsep</h2><p>Visualisasi artikel penelitian</p></div></div>
+            <div className={styles.panelActions}>
+              <label className={styles.srOnly} htmlFor="view-mode">Tampilan</label>
+              <select id="view-mode" className={styles.select} value={viewMode} onChange={(event) => setViewMode(event.target.value as "graph" | "detail")}><option value="graph">Grafik</option><option value="detail">Tabel</option></select>
+              <button className={styles.primaryButton} onClick={handleUploadFile} type="button" disabled={uploading}><IconUpload size={16} /> {uploading ? "Mengunggah" : "Upload"}</button>
+            </div>
+          </header>
+          <div className={styles.filterArea}>
+            <label className={styles.formField} htmlFor="article-search"><span className={styles.fieldLabel}><IconSearch size={15} /> Pilih artikel untuk difokuskan</span><input id="article-search" className={styles.fieldInput} placeholder="Cari judul artikel…" onChange={(event) => setArticleSearchQuery(event.currentTarget.value)} value={articleSearchQuery} /></label>
+            <div className={styles.articleChoices} aria-label="Artikel">
+              {nodes.filter((node) => (node.title || node.label || "").toLowerCase().includes(articleSearchQuery.toLowerCase())).map((node) => {
+                const id = String(node.id);
+                return <label className={styles.articleChoice} key={id}><input type="checkbox" checked={activeArticles.includes(id)} onChange={(event) => handleArticleSelectionChange(event.currentTarget.checked ? [...activeArticles, id] : activeArticles.filter((value) => value !== id))} /><span>{node.title || node.label || `Artikel ${node.id}`}</span></label>;
+              })}
+              {nodes.length === 0 && <p className={styles.emptyHint}>Belum ada artikel di ruang kerja ini.</p>}
+            </div>
+            {viewMode === "graph" && <fieldset className={styles.relationFilters}><legend><IconFilter size={15} /> Jenis relasi</legend>{Object.keys(relationColors).map((relation) => <label className={styles.relationChoice} key={relation}><input type="checkbox" checked={activeRelations.includes(relation)} onChange={(event) => handleRelationChange(relation, event.currentTarget.checked)} /><span className={`${styles.relationDot} ${styles[`relation_${relation}`]}`} />{getRelationDisplayName(relation)}</label>)}</fieldset>}
+          </div>
+          <div className={styles.visualization}>
+            <div className={styles.visualizationMeta}><span>{filteredNodes.length} artikel</span>{activeArticles.length > 0 && <button className={styles.textButton} onClick={() => handleArticleSelectionChange([])} type="button">Hapus pilihan</button>}</div>
+            <div className={styles.visualizationContent}>
+              {viewMode === "graph" ? <NetworkGraph nodes={filteredNodes} edges={filteredEdges} onNodeClick={handleNodeClick} onEdgeClick={handleEdgeClick} key={`${fullPath}-visjs`} /> : <ArticleDetailTable nodes={nodes} activeArticles={activeArticles} />}
+            </div>
+          </div>
+        </section>
 
-                    <Button
-                        variant="light"
-                        color="green"
-                        size="sm"
-                        leftSection={<IconUpload size={16} />}
-                        loading={uploading}
-                        onClick={handleUploadFile}
-                    >
-                        Upload
-                    </Button>
-                    
-                    <Button
-                        variant="light"
-                        color="blue"
-                        size="sm"
-                        leftSection={<IconEye size={16} />}
-                        onClick={() => {
-                        router.push(`/projects/${sessionId}/articles`)
-                        console.log('Lihat artikel clicked');
-                        }}
-                    >
-                        Lihat Artikel
-                    </Button>
-                    
-                    <Badge variant="light" color="blue" size="lg">
-                        {filteredNodes.length} Artikel
-                    </Badge>
-                    </Group>
-                </Group>
+        <section className={`${styles.panel} ${styles.assistantPanel}`} aria-labelledby="assistant-title">
+          <div className={styles.panelTabs} role="tablist" aria-label="Panel kerja">
+            <button className={`${styles.tab} ${activeTab === "chat" ? styles.tabActive : ""}`} role="tab" aria-selected={activeTab === "chat"} onClick={() => setActiveTab("chat")} type="button"><IconMessage size={17} /> Diskusi AI</button>
+            <button className={`${styles.tab} ${activeTab === "annotation" ? styles.tabActive : ""}`} role="tab" aria-selected={activeTab === "annotation"} onClick={() => { setActiveTab("annotation"); setResetChatContext(true); }} type="button"><IconHighlight size={17} /> Anotasi</button>
+          </div>
+          {activeTab === "chat" && <header className={styles.assistantHeading}><span className={styles.iconTile}><IconBrandHipchat size={19} /></span><div><h2 id="assistant-title">AI Assistant</h2><p>Diskusi dan analisis artikel</p></div>{(selectedNode || selectedEdge) && <span className={styles.contextBadge}>Konteks aktif</span>}</header>}
+          <div className={styles.assistantContent}>
+            {activeTab === "chat" ? <ChatPanel selectedNode={selectedNode} selectedEdge={selectedEdge} sessionId={sessionId} resetContext={resetChatContext} onContextReset={handleContextReset} /> : <AnnotationPanel sessionId={sessionId} session={session} />}
+          </div>
+        </section>
+      </div>
+    </div>
 
-                <Stack gap="md" mb="lg">
-                    <MultiSelect
-                    label={
-                        <Group gap="xs" mb="xs">
-                        <IconSearch size={16} />
-                        <Text size="sm" fw={500}>Pilih Artikel</Text>
-                        </Group>
-                    }
-                    placeholder="Cari dan pilih artikel untuk divisualisasikan..."
-                    value={activeArticles}
-                    onChange={
-                        handleArticleSelectionChange
-                        // setActiveArticles(e);
-                        // setSelectedNode(null);
-                    }
-                    data={nodes.map((node) => ({
-                        value: String(node.id) || '',
-                        label: node.title || node.label || `Artikel ${node.id}`, // PERBAIKAN: Fallback yang lebih baik
-                    }))}
-                    searchable
-                    clearable
-                    radius="md"
-                    />
+    <NativeDialog open={!!detailModalNode} onClose={closeNodeDetail} labelledBy="node-detail-title" className={styles.detailDialog}>
+      <header className={styles.dialogHeader}><div><h2 className={styles.dialogTitle} id="node-detail-title">Detail artikel</h2><p className={styles.muted}>Tujuan, metodologi, dan konteks penelitian</p></div><button className={styles.dialogClose} onClick={closeNodeDetail} type="button" aria-label="Tutup dialog">×</button></header>
+      <NodeDetail node={detailModalNode} onClose={closeNodeDetail} session={session} projectId={sessionId} />
+    </NativeDialog>
+    <NativeDialog open={!!detailModalEdge} onClose={() => setDetailModalEdge(null)} labelledBy="edge-detail-title" className={styles.detailDialog}>
+      <header className={styles.dialogHeader}><div><h2 className={styles.dialogTitle} id="edge-detail-title">Detail hubungan</h2><p className={styles.muted}>Arah dan konteks relasi antarartikel</p></div><button className={styles.dialogClose} onClick={() => setDetailModalEdge(null)} type="button" aria-label="Tutup dialog">×</button></header>
+      <EdgeDetail key={String(detailModalEdge?.id)} edge={detailModalEdge} onClose={() => setDetailModalEdge(null)} onOpenNodeDetail={(nodeId) => { const node = nodes.find((item) => item.id === nodeId); setDetailModalNode(node ?? null); setEdgeDetailReturn(detailModalEdge); setDetailModalEdge(null); }} />
+    </NativeDialog>
+    <RealUploadProgress key={currentUploadId ?? "idle"} uploadId={currentUploadId} uploading={uploading} onComplete={handleUploadComplete} />
 
-                    {viewMode === 'graph' && (
-                    <Box>
-                        <Group gap="xs" mb="sm">
-                        <IconFilter size={16} />
-                        <Text size="sm" fw={500}>Jenis Relasi</Text>
-                        </Group>
-                        <Group gap="sm">
-                        {Object.entries(relationColors).map(([relation, color]) => (
-                            <Checkbox
-                            key={relation}
-                            value={relation}
-                            color={color}
-                            label={
-                                <Group gap="xs">
-                                <Badge variant="dot" color={color} size="sm">
-                                    {getRelationDisplayName(relation)}
-                                </Badge>
-                                </Group>
-                            }
-                            checked={activeRelations.includes(relation)}
-                            onChange={(event) => 
-                                handleRelationChange(relation, event.currentTarget.checked)
-                            }
-                            styles={{
-                                input: { cursor: 'pointer' },
-                                label: { cursor: 'pointer' }
-                            }}
-                            />
-                        ))}
-                        </Group>
-                    </Box>
-                    )}
-
-                </Stack>
-
-                <Paper 
-                    shadow="sm" 
-                    radius="md" 
-                    withBorder
-                    style={{ 
-                    flex: 1, 
-                    minHeight: 400,
-                    borderStyle: 'dashed',
-                    borderWidth: 2,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: dark 
-                        ? theme.colors.dark[8] 
-                        : theme.colors.gray[0]
-                    }}
-                >
-                    {/* Dropdown di pojok kiri atas */}
-                    {viewMode === 'graph' ? (
-                    
-                    <Box style={{
-                        width: '100%',
-                        height: '100%',
-                        position: 'relative',
-                    }}>
-                    <Box
-                        style={{
-                        position: 'absolute',
-                        top: 12,
-                        left: 12,
-                        zIndex: 10,
-                        minWidth: 120
-                        }}
-                    >
-                    </Box>
-    
-                    {/* Graph Container */}
-                    <Box style={{ width: '100%', height: '100%' }}>
-                        
-                        <NetworkGraph
-                            nodes={filteredNodes}
-                            edges={filteredEdges}
-                            onNodeClick={handleNodeClick}
-                            onEdgeClick={handleEdgeClick}
-                            key ={`${fullPath}-visjs-${graphKey}`}
-                        />
-                    </Box>
-                    </Box>
-                    ) : (
-                    <Box style={{ width: '100%', height: '100%', padding: '16px' }}>
-                        <ScrollArea style={{ height: '100%' }}>
-                        <ArticleDetailTable 
-                            nodes={nodes}
-                            activeArticles={activeArticles}
-                        />
-                        </ScrollArea>
-                    </Box>
-                    )}
-                </Paper>
-                </Card>
-            </Grid.Col>
-
-            {/* Chat Panel */}
-            <Grid.Col span={{ base: 12, lg: 6 }} h="100%">
-                <Card 
-                shadow="sm" 
-                padding="lg" 
-                radius="lg" 
-                h="100%" 
-                withBorder
-                style={{ display: 'flex', flexDirection: 'column' }}
-                >
-                <Stack gap="sm" mb="sm">
-                    <Group justify="center" mb="sm">
-                    <Group 
-                        gap={0} 
-                        style={{ 
-                        padding: '0px',
-                        backgroundColor: dark ? theme.colors.dark[6] : theme.colors.gray[1],
-                        borderRadius: '50px',
-                        border: `1px solid ${dark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
-                        boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)'
-                        }}
-                    >
-                        <ActionIcon
-                        variant={activeTab === 'chat' ? 'filled' : 'transparent'}
-                        color={activeTab === 'chat' ? 'blue' : 'gray'}
-                        size={34}
-                        radius="xl"
-                        onClick={() => setActiveTab('chat')}
-                        style={{
-                            transition: 'all 0.2s ease',
-                            transform: activeTab === 'chat' ? 'scale(1.05)' : 'scale(1)',
-                            boxShadow: activeTab === 'chat' ? '0 2px 8px rgba(37, 99, 235, 0.3)' : 'none'
-                        }}
-                        >
-                        <IconMessage size={20} />
-                        </ActionIcon>
-                        
-                        <ActionIcon
-                        variant={activeTab === 'annotation' ? 'filled' : 'transparent'}
-                        color={activeTab === 'annotation' ? 'orange' : 'gray'}
-                        size={34}
-                        radius="xl"
-                        onClick={() => setActiveTab('annotation')}
-                        style={{
-                            transition: 'all 0.2s ease',
-                            transform: activeTab === 'annotation' ? 'scale(1.05)' : 'scale(1)',
-                            boxShadow: activeTab === 'annotation' ? '0 2px 8px rgba(255, 165, 0, 0.3)' : 'none'
-                        }}
-                        >
-                        <IconHighlight size={20} />
-                        </ActionIcon>
-                    </Group>
-                    </Group>
-
-                    {/* Dynamic Title & Description - Hanya untuk Chat */}
-                    {activeTab === 'chat' && (
-                    <Group justify="space-between" align="flex-start">
-                        <Group gap="xs">
-                        <ThemeIcon 
-                            variant="light" 
-                            color="blue" 
-                            size="lg"
-                            style={{
-                            transition: 'all 0.3s ease',
-                            transform: 'scale(1.1)'
-                            }}
-                        >
-                            <IconBrandHipchat size={20} />
-                        </ThemeIcon>
-                        <Box>
-                            <Text 
-                            size="xl" 
-                            fw={700}
-                            style={{
-                                backgroundImage: 'linear-gradient(45deg, #3B82F6, #1E40AF)',
-                                WebkitBackgroundClip: 'text',
-                                WebkitTextFillColor: 'transparent',
-                                backgroundClip: 'text',
-                                transition: 'all 0.3s ease'
-                            }}
-                            >
-                            AI Assistant
-                            </Text>
-                            <Text size="sm" c="dimmed">
-                            Diskusi dan Analisis Artikel
-                            </Text>
-                        </Box>
-                        </Group>
-                        
-                        {/* Status Badge */}
-                        {(selectedNode || selectedEdge) && (
-                        <Badge 
-                            variant="gradient" 
-                            gradient={{ from: 'blue', to: 'cyan', deg: 45 }}
-                            size="lg"
-                            // rightSection={<IconChevronRight size={12} />}
-                            style={{
-                            animation: 'pulse 2s infinite'
-                            }}
-                        >
-                            {/* {selectedNode ? 'Node Terpilih' : 'Edge Terpilih'} */}
-                        </Badge>
-                        )}
-                    </Group>
-                    )}
-
-                    {/* Animated Divider - Hanya untuk Chat */}
-                    {activeTab === 'chat' && (
-                    <Box
-                        style={{
-                        height: '2px',
-                        backgroundImage: 'linear-gradient(90deg, transparent, #3B82F6, transparent)',
-                        borderRadius: '1px',
-                        transition: 'all 0.3s ease'
-                        }}
-                    />
-                    )}
-                </Stack>
-
-                {/* Content Area dengan Animasi */}
-                <Box 
-                    style={{ 
-                    flex: 1,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    minHeight: 0 // Penting untuk flex container
-                    }}
-                > 
-                    {activeTab === 'chat' ? (
-                    <Box>
-                        <ChatPanel 
-                        selectedNode={selectedNode} 
-                        selectedEdge={selectedEdge} 
-                        sessionId={sessionId}
-                        resetContext={resetChatContext}
-                        onContextReset={handleContextReset}
-                        />
-                    </Box>
-                    ) : (
-                    <Box>
-                        <AnnotationPanel sessionId={sessionId} session={session} />
-                    </Box>
-                    )}
-                </Box>
-                </Card>
-            </Grid.Col>
-            </Grid>
-        </Container>
-
-        {/* Enhanced Modals */}
-        <Modal
-            opened={!!detailModalNode}
-            onClose={() => {
-            setDetailModalNode(null);
-            if (edgeDetailReturn){
-                setDetailModalEdge(edgeDetailReturn);
-                setEdgeDetailReturn(null);
-            }
-            }}
-            title={
-            <Group gap="sm">
-                <ThemeIcon variant="light" color="blue" size="md">
-                <IconCircleDot size={16} />
-                </ThemeIcon>
-                <Box>
-                <Text fw={600}>{detailModalNode?.title || 'Detail Artikel'}</Text>
-                <Text size="xs" c="dimmed">Informasi lengkap artikel</Text>
-                </Box>
-            </Group>
-            }
-            size="75vw"
-            radius="lg"
-            shadow="xl"
-        >
-            <NodeDetail node={detailModalNode} 
-            // trackPdfView={trackPdfView}
-            // trackModalInteraction={trackModalInteraction}
-            onClose={() => {
-            setDetailModalNode(null);
-            if (edgeDetailReturn){
-                setDetailModalEdge(edgeDetailReturn);
-                setEdgeDetailReturn(null);
-            }
-            }} 
-            session={session}
-            projectId={sessionId}
-            />
-        </Modal>
-
-        <Modal
-            opened={!!detailModalEdge}
-            onClose={() => setDetailModalEdge(null)}
-            title={
-            <Group gap="sm">
-                <ThemeIcon variant="light" color="orange" size="md">
-                <IconNetwork size={16} />
-                </ThemeIcon>
-                <Box>
-                <Text fw={600}>Relasi: {getRelationDisplayName(getDisplayRelationKey(detailModalEdge?.relation ?? ''))}</Text>
-                <Text size="xs" c="dimmed">Detail hubungan antar artikel</Text>
-                </Box>
-            </Group>
-            }
-            size="lg"
-            radius="lg"
-            shadow="xl"
-        >
-            <EdgeDetail edge={detailModalEdge} onClose={() => setDetailModalEdge(null)} onOpenNodeDetail={(nodeId) => {
-            const node = nodes.find((n) => n.id === nodeId);
-            setDetailModalNode(node ?? null);
-            setEdgeDetailReturn(detailModalEdge);
-            setDetailModalEdge(null);
-            }} />
-        </Modal>
-        
-        <RealUploadProgress 
-            uploadId={currentUploadId} // State baru
-            uploading={uploading}
-            onComplete={handleUploadComplete}
-        />
-
-        {/* // Enhanced Upload Modal JSX */}
-        <Modal
-            opened={uploadModalOpened}
-            onClose={handleModalClose}
-            title="Upload Artikel PDF"
-            size="lg"
-            centered
-        >
-            {uploadMode === 'choose' && (
-            <Stack gap="lg" align="center">
-                <Text size="lg" fw={500} ta="center">
-                Pilih cara upload artikel
-                </Text>
-                
-                <Group gap="md" grow>
-                <Card
-                    withBorder
-                    padding="xl"
-                    radius="md"
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => setUploadMode('with-ris')}
-                >
-                    <Stack align="center" gap="sm">
-                    <ThemeIcon size="xl" variant="light" color="blue">
-                        <IconUpload size={24} />
-                    </ThemeIcon>
-                    <Text fw={500}>Upload dengan RIS</Text>
-                    <Text size="sm" c="dimmed" ta="center">
-                        Upload file RIS terlebih dahulu untuk mengisi metadata secara otomatis
-                    </Text>
-                    </Stack>
-                </Card>
-                
-                <Card
-                    withBorder
-                    padding="xl"
-                    radius="md"
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => setUploadMode('direct')}
-                >
-                    <Stack align="center" gap="sm">
-                    <ThemeIcon size="xl" variant="light" color="green">
-                        <IconUpload size={24} />
-                    </ThemeIcon>
-                    <Text fw={500}>Upload Langsung</Text>
-                    <Text size="sm" c="dimmed" ta="center">
-                        Upload PDF langsung tanpa mengisi metadata
-                    </Text>
-                    </Stack>
-                </Card>
-                </Group>
-                
-                <Button variant="light" onClick={handleModalClose}>
-                Batal
-                </Button>
-            </Stack>
-            )}
-            
-            {uploadMode === 'with-ris' && (
-            <Stack gap="md">
-                <Group justify="space-between" align="center">
-                <Text size="lg" fw={500}>Upload dengan RIS</Text>
-                <ActionIcon variant="subtle" onClick={() => setUploadMode('choose')}>
-                    <IconChevronLeft size={16} />
-                </ActionIcon>
-                </Group>
-                
-                {/* RIS File Upload */}
-                <div>
-                <input
-                    type="file"
-                    style={{ display: 'none'}}
-                    ref={risFileInputRef}
-                    onChange={onRisFileChange}
-                    accept=".ris"
-                />
-                <Button
-                    variant="light"
-                    color="blue"
-                    leftSection={<IconUpload size={16} />}
-                    onClick={() => risFileInputRef.current?.click()}
-                    fullWidth
-                    loading={isProcessingRis}
-                >
-                    {risFile ? `RIS: ${risFile.name}` : 'Pilih File RIS'}
-                </Button>
-                </div>
-                
-                {/* PDF File Upload */}
-                <div>
-                <input
-                    type="file"
-                    style={{ display: 'none'}}
-                    ref={fileInputRef}
-                    onChange={onFileChangeInModal}
-                    accept="application/pdf"
-                />
-                <Button
-                    variant="light"
-                    color="green"
-                    leftSection={<IconUpload size={16} />}
-                    onClick={() => fileInputRef.current?.click()}
-                    fullWidth
-                >
-                    {selectedFile ? `PDF: ${selectedFile.name}` : 'Pilih File PDF'}
-                </Button>
-                </div>
-                
-                {/* Form Fields */}
-                <TextInput
-                label="Judul Artikel"
-                placeholder="Masukkan judul artikel"
-                value={uploadForm.title}
-                onChange={(e) => setUploadForm({...uploadForm, title: e.target.value})}
-                required
-                />
-                
-                <TextInput
-                label="Penulis"
-                placeholder="Masukkan nama penulis"
-                value={uploadForm.author}
-                onChange={(e) => setUploadForm({...uploadForm, author: e.target.value})}
-                required
-                />
-                
-                <TextInput
-                label="Tahun"
-                placeholder="Masukkan tahun publikasi"
-                value={uploadForm.year}
-                onChange={(e) => setUploadForm({...uploadForm, year: e.target.value})}
-                required
-                />
-                
-                <Textarea
-                label="Abstrak"
-                placeholder="Masukkan abstrak artikel"
-                value={uploadForm.abstract}
-                onChange={(e) => setUploadForm({...uploadForm, abstract: e.target.value})}
-                minRows={4}
-                required
-                />
-                
-                <TextInput
-                label="Kata Kunci"
-                placeholder="Masukkan kata kunci (pisahkan dengan koma)"
-                value={uploadForm.keywords}
-                onChange={(e) => setUploadForm({...uploadForm, keywords: e.target.value})}
-                />
-                
-                <TextInput
-                label="DOI"
-                placeholder="Masukkan DOI artikel"
-                value={uploadForm.doi}
-                onChange={(e) => setUploadForm({...uploadForm, doi: e.target.value})}
-                />
-                
-                <Group justify="flex-end" mt="md">
-                <Button variant="light" onClick={() => setUploadMode('choose')}>
-                    Kembali
-                </Button>
-                <Button 
-                    onClick={handleUploadSubmit} 
-                    loading={uploading}
-                    disabled={!selectedFile}
-                >
-                    Upload
-                </Button>
-                </Group>
-            </Stack>
-            )}
-            
-            {uploadMode === 'direct' && (
-            <Stack gap="md">
-                <Group justify="space-between" align="center">
-                <Text size="lg" fw={500}>Upload Langsung</Text>
-                <ActionIcon variant="subtle" onClick={() => setUploadMode('choose')}>
-                    <IconChevronLeft size={16} />
-                </ActionIcon>
-                </Group>
-                
-                <div>
-                <input
-                    type="file"
-                    style={{ display: 'none'}}
-                    ref={fileInputRef}
-                    onChange={onFileChangeInModal}
-                    accept="application/pdf"
-                />
-                <Button
-                    variant="light"
-                    color="green"
-                    leftSection={<IconUpload size={16} />}
-                    onClick={() => fileInputRef.current?.click()}
-                    fullWidth
-                >
-                    {selectedFile ? `File: ${selectedFile.name}` : 'Pilih File PDF'}
-                </Button>
-                </div>
-                
-                {selectedFile && (
-                <Text size="sm" c="dimmed">
-                    File: {selectedFile.name}
-                </Text>
-                )}
-                
-                <Group justify="flex-end" mt="md">
-                <Button variant="light" onClick={() => setUploadMode('choose')}>
-                    Kembali
-                </Button>
-                <Button 
-                    onClick={handleDirectPdfUpload} 
-                    loading={uploading}
-                    disabled={!selectedFile}
-                >
-                    Upload Langsung
-                </Button>
-                </Group>
-            </Stack>
-            )}
-        </Modal>
-        </DashboardLayout>
-    </>
-  );
+    <NativeDialog open={uploadModalOpened} onClose={handleModalClose} labelledBy="upload-dialog-title" className={styles.uploadDialog}>
+      <header className={styles.dialogHeader}><div><p className={styles.eyebrow}>PUSTAKA RUANG KERJA</p><h2 className={styles.dialogTitle} id="upload-dialog-title">Tambah artikel PDF</h2></div><button className={styles.dialogClose} onClick={handleModalClose} type="button" aria-label="Tutup dialog">×</button></header>
+      {uploadMode === "choose" && <div className={styles.uploadChoices}><p>Pilih cara untuk menambahkan artikel.</p><button className={styles.uploadChoice} onClick={() => setUploadMode("with-ris")} type="button"><IconUpload size={20} /><strong>Impor dengan RIS</strong><span>Isi metadata artikel dari berkas RIS.</span></button><button className={styles.uploadChoice} onClick={() => setUploadMode("direct")} type="button"><IconUpload size={20} /><strong>Upload langsung</strong><span>Tambahkan PDF tanpa metadata.</span></button><button className={styles.quietButton} onClick={handleModalClose} type="button">Batal</button></div>}
+      {uploadMode === "with-ris" && <form className={styles.uploadForm} onSubmit={(event) => { event.preventDefault(); void handleUploadSubmit(); }}>
+        <button className={styles.backButton} onClick={() => setUploadMode("choose")} type="button"><IconChevronLeft size={15} /> Pilih metode lain</button>
+        <label className={styles.filePicker}><span>Berkas RIS</span><input type="file" ref={risFileInputRef} onChange={onRisFileChange} accept=".ris" /><span>{isProcessingRis ? "Membaca berkas…" : risFile?.name || "Pilih berkas RIS"}</span></label>
+        <label className={styles.filePicker}><span>Dokumen PDF</span><input type="file" ref={fileInputRef} onChange={onFileChangeInModal} accept="application/pdf" required /><span>{selectedFile?.name || "Pilih berkas PDF"}</span></label>
+        <label className={styles.formField}><span className={styles.fieldLabel}>Judul artikel</span><input className={styles.fieldInput} placeholder="Judul artikel" value={uploadForm.title} onChange={(event) => setUploadForm({ ...uploadForm, title: event.target.value })} required /></label>
+        <label className={styles.formField}><span className={styles.fieldLabel}>Penulis</span><input className={styles.fieldInput} placeholder="Nama penulis" value={uploadForm.author} onChange={(event) => setUploadForm({ ...uploadForm, author: event.target.value })} required /></label>
+        <label className={styles.formField}><span className={styles.fieldLabel}>Tahun</span><input className={styles.fieldInput} inputMode="numeric" placeholder="Tahun publikasi" value={uploadForm.year} onChange={(event) => setUploadForm({ ...uploadForm, year: event.target.value })} required /></label>
+        <label className={styles.formField}><span className={styles.fieldLabel}>Abstrak</span><textarea className={styles.fieldTextarea} placeholder="Abstrak artikel" value={uploadForm.abstract} onChange={(event) => setUploadForm({ ...uploadForm, abstract: event.target.value })} required /></label>
+        <label className={styles.formField}><span className={styles.fieldLabel}>Kata kunci</span><input className={styles.fieldInput} placeholder="Pisahkan dengan koma" value={uploadForm.keywords} onChange={(event) => setUploadForm({ ...uploadForm, keywords: event.target.value })} /></label>
+        <label className={styles.formField}><span className={styles.fieldLabel}>DOI</span><input className={styles.fieldInput} placeholder="DOI artikel" value={uploadForm.doi} onChange={(event) => setUploadForm({ ...uploadForm, doi: event.target.value })} /></label>
+        <footer className={styles.dialogActions}><button className={styles.quietButton} onClick={() => setUploadMode("choose")} type="button">Kembali</button><button className={styles.primaryButton} disabled={uploading || !selectedFile} type="submit">{uploading ? "Mengunggah…" : "Upload artikel"}</button></footer>
+      </form>}
+      {uploadMode === "direct" && <div className={styles.uploadForm}>
+        <button className={styles.backButton} onClick={() => setUploadMode("choose")} type="button"><IconChevronLeft size={15} /> Pilih metode lain</button>
+        <label className={styles.filePicker}><span>Dokumen PDF</span><input type="file" ref={fileInputRef} onChange={onFileChangeInModal} accept="application/pdf" /><span>{selectedFile?.name || "Pilih berkas PDF"}</span></label>
+        <footer className={styles.dialogActions}><button className={styles.quietButton} onClick={() => setUploadMode("choose")} type="button">Kembali</button><button className={styles.primaryButton} disabled={uploading || !selectedFile} onClick={() => void handleDirectPdfUpload()} type="button">{uploading ? "Mengunggah…" : "Upload PDF"}</button></footer>
+      </div>}
+    </NativeDialog>
+  </DashboardLayout>;
 }

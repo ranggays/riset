@@ -1,11 +1,11 @@
-"use client"
+﻿"use client"
 
-import { Box, Text, Button, ScrollArea, Group, Stack, useMantineColorScheme, useMantineTheme, Loader, Popover, Modal, ThemeIcon, Avatar, Divider, Card } from "@mantine/core";
-import { IconCircleDot, IconPaperclip, IconSparkles, IconBrain, IconMessageCircle } from "@tabler/icons-react";
+import { IconSparkles, IconBrain, IconMessageCircle } from "@tabler/icons-react";
 import { useEffect, useState, useRef, useCallback } from "react";
 import type { ExtendedNode, ExtendedEdge } from "../../types";
-import { notifications } from "@mantine/notifications";
-import { useDebouncedValue } from "@mantine/hooks";
+import { notifyDashboard } from "../DashboardFeedback";
+import { NativeDialog } from "../NativeDialog";
+import styles from "../../Dashboard.module.css";
 import WebViewer from "./WebViewer";
 import NodeDetail from "./NodeDetail";
 import { HelpGuideModal } from "../HelpGuideModal";
@@ -47,24 +47,20 @@ export default function ChatPanel({
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
+  const [debouncedInput, setDebouncedInput] = useState("")
   const [contextNodes, setContextNodes] = useState<ExtendedNode[]>([])
   const [contextEdges, setContextEdges] = useState<ExtendedEdge[]>([])
-  const [uploading, setUpLoading] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messageEndRef = useRef<HTMLDivElement>(null)
-  const { colorScheme } = useMantineColorScheme()
-  const theme = useMantineTheme()
-  const isDark = colorScheme === "dark"
 
   // State for suggestion
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [suggestionContext, setSuggestionContext] = useState<"input" | "response" | null>(null)
-  const [debouncedInput] = useDebouncedValue(input, 500)
   const [selectedPDF, setSelectedPDF] = useState<string | null>(null)
   const [modalOpened, setModalOpened] = useState(false)
-  const [detailModalNode, setDetailModalNode] = useState<any>(null)
+  const [detailModalNode, setDetailModalNode] = useState<ExtendedNode | null>(null)
 
   // For forceWeb
   const [forceWeb, setForceWeb] = useState(false)
@@ -118,7 +114,12 @@ export default function ChatPanel({
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // xapi
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<Record<string, unknown> | null>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedInput(input), 500);
+    return () => window.clearTimeout(timer);
+  }, [input]);
 
   useEffect(() => {
       const getSessionFromAPI = async () => {
@@ -127,13 +128,13 @@ export default function ChatPanel({
           const data = await response.json();
           
           if (data.user) {
-            console.log("✅ Got session from API:", data.user.email);
+            console.log("âœ… Got session from API:", data.user.email);
             setSession({
               user: data.user,
               expires_at: data.expires_at
             });
           } else {
-            console.log("❌ No session from API");
+            console.log("âŒ No session from API");
           }
         } catch (error) {
           console.error("API session fetch error:", error);
@@ -186,10 +187,10 @@ export default function ChatPanel({
           setLoadingMore(true)
         }
         const res = await fetch(`/api/chat?sessionId=${sessionId}&page=${pageNumber}&limit=${MESSAGES_PER_PAGE}`)
-        const data = await res.json()
+        const data = await res.json() as { messages: Array<{ role: string; content: string; contextNodeIds?: string[]; contextEdgeIds?: string[]; references?: Reference[] }>; total?: number; hasMore?: boolean }
 
-        const formatted = data.messages.map((msg: any) => ({
-          sender: msg.role === "assistant" ? "ai" : "user",
+        const formatted = data.messages.map((msg) => ({
+          sender: (msg.role === "assistant" ? "ai" : "user") as ChatMessage["sender"],
           text: msg.content,
           contextNodeIds: msg.contextNodeIds || [],
           contextEdgeIds: msg.contextEdgeIds || [],
@@ -206,8 +207,8 @@ export default function ChatPanel({
           setShouldScrollToBottom(true) // Only for initial load
         }
 
-        setTotalMessages(data.total)
-        setHasMore(data.hasMore)
+        setTotalMessages(data.total ?? 0)
+        setHasMore(data.hasMore ?? false)
       } catch (error) {
         console.error("Gagal memuat chat:", error)
       } finally {
@@ -310,7 +311,7 @@ export default function ChatPanel({
         const heightDifference = newScrollHeight - lastScrollHeight.current
 
         if (heightDifference > 0) {
-          console.log(`📏 Restoring scroll position - Height diff: ${heightDifference}`)
+          console.log(`ðŸ“ Restoring scroll position - Height diff: ${heightDifference}`)
           const offset = 200 // 200px offset from top
           const newScrollTop = Math.max(scrollPositionRef.current.y + heightDifference + offset, offset)
 
@@ -323,11 +324,16 @@ export default function ChatPanel({
     }
   }, [messages.length, loadingMore])
 
+  const addContextNode = useCallback((node: ExtendedNode) => {
+    if (!node?.id) return;
+    setContextNodes((current) => current.some((item) => item.id === node.id) ? current : [...current, node]);
+  }, []);
+
   useEffect(() => {
-    if (selectedNode) {
-      addContextNode(selectedNode)
-    }
-  }, [selectedNode])
+    if (!selectedNode) return;
+    const timer = window.setTimeout(() => addContextNode(selectedNode), 0);
+    return () => window.clearTimeout(timer);
+  }, [selectedNode, addContextNode]);
 
   useEffect(() => {
     const shouldScroll =
@@ -360,12 +366,10 @@ export default function ChatPanel({
       scrollToBottom()
 
       // Reset flags after scrolling
-      if (isInitialMount) {
-        setIsInitialMount(false)
-      }
-      if (shouldScrollToBottom) {
-        setShouldScrollToBottom(false)
-      }
+      window.requestAnimationFrame(() => {
+        if (isInitialMount) setIsInitialMount(false);
+        if (shouldScrollToBottom) setShouldScrollToBottom(false);
+      });
     }
   }, [messages.length, isLoading])
 
@@ -399,7 +403,8 @@ export default function ChatPanel({
   }
 
   useEffect(() => {
-    fetchInitialSuggestions()
+    const timer = window.setTimeout(() => { void fetchInitialSuggestions(); }, 0);
+    return () => window.clearTimeout(timer);
   }, [contextNodes.length, contextEdges.length])
 
   const fetchFollowupSuggestions = async (lastMessage: string) => {
@@ -528,11 +533,11 @@ Apakah Anda ingin membuka panduan penggunaan?`,
         body: JSON.stringify(payloadd),
       })
 
-      const data = await result.json()
+      const data = await result.json() as { answer: string; references?: Array<Partial<Reference> & { source_url?: string; link?: string; document_preview?: string; title?: string }> }
 
       let processedReferences: Reference[] = []
       if (data.references && Array.isArray(data.references)) {
-        processedReferences = data.references.map((ref: any, idx: number) => {
+        processedReferences = data.references.map((ref, idx) => {
           const processedRef = {
             url: ref.url || ref.source_url || ref.link || "#",
             text: ref.text || ref.title || ref.document_preview || `Reference ${idx + 1}`,
@@ -561,39 +566,10 @@ Apakah Anda ingin membuka panduan penggunaan?`,
     setSuggestionContext, setPage, setHasMore, setShouldScrollToBottom, 
     scrollAreaRef, fetchFollowupSuggestions])
 
-  const LoadingMoreIndicator = () => {
-    return (
-      <Box p="md" style={{ textAlign: "center" }}>
-        <Group justify="center" gap="xs">
-          <Loader size="sm" color="blue" />
-          <Text size="sm" c="dimmed" fw={500}>
-            Memuat pesan sebelumnya...
-          </Text>
-        </Group>
-      </Box>
-    )
-  }
-
-  const addContextNode = (node: ExtendedNode) => {
-    if (!node || !node.id) return // Guard clause
-
-    setContextNodes((prev) => {
-      // Check if node already exists by id
-      const exists = prev.some((n) => n.id === node.id)
-      if (exists) {
-        console.log(`Node ${node.id} already exists in context`)
-        return prev
-      }
-      console.log(`Adding node ${node.id} to context`)
-      return [...prev, node]
-    })
-  }
-
   const removeContextNode = (node: ExtendedNode) => {
     setContextNodes((prev) => prev.filter((n) => n.id !== node.id))
   }
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     return () => {
@@ -608,88 +584,15 @@ Apakah Anda ingin membuka panduan penggunaan?`,
   }, [])
 
   useEffect(() => {
-    return () => {
-      setContextNodes([])
-      setContextEdges([])
-    }
-  }, [])
-
-  useEffect(() => {
     if (resetContext) {
-      setContextNodes([])
-      setContextEdges([])
-      onContextReset?.()
+      const timer = window.setTimeout(() => {
+        setContextNodes([]);
+        setContextEdges([]);
+        onContextReset?.();
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [resetContext, onContextReset])
-
-  const LoadingMessage = () => {
-    return (
-      <Card
-        shadow="sm"
-        radius="xl"
-        withBorder
-        style={{
-          alignSelf: "flex-start",
-          background: isDark
-            ? `linear-gradient(135deg, ${theme.colors.dark[6]} 0%, ${theme.colors.dark[7]} 100%)`
-            : `linear-gradient(135deg, ${theme.colors.gray[0]} 0%, ${theme.colors.gray[1]} 100%)`,
-          maxWidth: "85%",
-          padding: "20px",
-          border: `1px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[2]}`,
-          position: "relative",
-          overflow: "hidden",
-        }}
-      >
-        <Box
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            height: "3px",
-            background: `linear-gradient(90deg, ${theme.colors.blue[6]}, ${theme.colors.cyan[5]}, ${theme.colors.violet[6]})`,
-            backgroundSize: "200% 100%",
-            animation: "shimmer 2s infinite",
-          }}
-        />
-        <Group mb="xs" gap="sm">
-          <Avatar
-            size="sm"
-            radius="xl"
-            style={{
-              background: `linear-gradient(135deg, ${theme.colors.blue[6]} 0%, ${theme.colors.cyan[5]} 100%)`,
-            }}
-          >
-            <IconBrain size={16} color="white" />
-          </Avatar>
-          <Text size="sm" fw={600} c={isDark ? theme.colors.gray[3] : theme.colors.gray[7]}>
-            AI Assistant
-          </Text>
-        </Group>
-        <Group gap="xs" align="center">
-          <Loader size="sm" color="blue" />
-          <Text size="sm" c="dimmed" fw={500}>
-            Sedang berpikir...
-          </Text>
-          <Box style={{ display: "flex", gap: "2px", marginLeft: "8px" }}>
-            {[0, 1, 2].map((i) => (
-              <Box
-                key={i}
-                style={{
-                  width: "4px",
-                  height: "4px",
-                  borderRadius: "50%",
-                  backgroundColor: theme.colors.blue[6],
-                  animation: `bounce 1.4s infinite ease-in-out both`,
-                  animationDelay: `${i * 0.16}s`,
-                }}
-              />
-            ))}
-          </Box>
-        </Group>
-      </Card>
-    )
-  }
 
   const handlerOpenPdf = async (url: string) => {
     if (url.startsWith("graph://node/")) {
@@ -711,123 +614,7 @@ Apakah Anda ingin membuka panduan penggunaan?`,
     }
   }
 
-  const ReferenceTooltip = ({ reference, order }: { reference: Reference; order: number }) => {
-    const [opened, setOpened] = useState(false)
-    const timeoutRef = useRef<NodeJS.Timeout | null>(null)
-
-    const handleMouseEnter = () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
-      }
-      timeoutRef.current = setTimeout(() => setOpened(true), 100)
-    }
-
-    const handleMouseLeave = () => {
-      timeoutRef.current = setTimeout(() => setOpened(false), 1000)
-    }
-
-    const handlePopoverMouseEnter = () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
-      }
-    }
-
-    const handlePopoverMouseLeave = () => {
-      timeoutRef.current = setTimeout(() => setOpened(false), 1000)
-    }
-
-    return (
-      <Popover
-        width={350}
-        position="bottom"
-        withArrow
-        shadow="xl"
-        offset={5}
-        withinPortal
-        opened={opened}
-        onClose={() => setOpened(false)}
-        transitionProps={{ duration: 200 }}
-      >
-        <Popover.Target>
-          <span
-            onClick={() => handlerOpenPdf(reference.url)}
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
-            style={{
-              cursor: "pointer",
-              fontSize: "0.75rem",
-              fontWeight: 600,
-              margin: "0 2px",
-              transition: "all 0.2s ease",
-              background: `linear-gradient(135deg, ${theme.colors.blue[6]} 0%, ${theme.colors.cyan[5]} 100%)`,
-              color: "white",
-              padding: "2px 6px",
-              borderRadius: "4px",
-              display: "inline-block",
-            }}
-          >
-            {reference.ref_mark}
-          </span>
-        </Popover.Target>
-        <Popover.Dropdown
-          onMouseEnter={handlePopoverMouseEnter}
-          onMouseLeave={handlePopoverMouseLeave}
-          style={{
-            background: isDark
-              ? `linear-gradient(135deg, ${theme.colors.dark[6]} 0%, ${theme.colors.dark[7]} 100%)`
-              : `linear-gradient(135deg, ${theme.colors.gray[0]} 0%, white 100%)`,
-            border: `1px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[2]}`,
-          }}
-        >
-          <Box p="sm" style={{ maxWidth: 320 }}>
-            <Group gap="xs" mb="sm">
-              <ThemeIcon size="sm" variant="gradient" gradient={{ from: "blue", to: "cyan" }}>
-                <IconCircleDot size={12} />
-              </ThemeIcon>
-              <Text size="sm" fw={600}>
-                Referensi {order}
-              </Text>
-            </Group>
-            <Box
-              mt={4}
-              style={{
-                fontSize: "0.75rem",
-                wordBreak: "break-word",
-                lineHeight: 1.5,
-                overflow: "hidden",
-                display: "-webkit-box",
-                WebkitLineClamp: 4,
-                WebkitBoxOrient: "vertical",
-                color: "inherit",
-                marginBottom: "12px",
-                padding: "8px",
-                backgroundColor: isDark ? theme.colors.dark[8] : theme.colors.gray[0],
-                borderRadius: theme.radius.sm,
-                border: `1px solid ${isDark ? theme.colors.dark[5] : theme.colors.gray[2]}`,
-              }}
-            >
-              {reference.preview}
-            </Box>
-            <Button
-              onClick={() => handlerOpenPdf(reference.url)}
-              size="xs"
-              variant="gradient"
-              gradient={{ from: "blue", to: "cyan" }}
-              leftSection={<IconCircleDot size={14} />}
-              fullWidth
-              style={{
-                fontWeight: 500,
-              }}
-            >
-              Buka Dokumen Lengkap
-            </Button>
-          </Box>
-        </Popover.Dropdown>
-      </Popover>
-    )
-  }
-
-  const handleTextSelectionForAnnotation = useCallback((e: React.MouseEvent<HTMLDivElement>, message: ChatMessage) => {
+  const handleTextSelectionForAnnotation = useCallback((e: React.MouseEvent<HTMLElement>, message: ChatMessage) => {
     const selection = window.getSelection()
     if (!selection || selection.toString().length === 0) {
       setShowAnnotationModal(false)
@@ -842,19 +629,14 @@ Apakah Anda ingin membuka panduan penggunaan?`,
 
     // Ensure selection is within the AI message content
     const targetElement = e.target as HTMLElement
-    const messageContentElement = targetElement.closest(".ai-message-content")
+    const messageContentElement = targetElement.closest(`.${styles.markdownContent}`)
     if (!messageContentElement || !messageContentElement.contains(selection.getRangeAt(0).commonAncestorContainer)) {
       setShowAnnotationModal(false)
       return
     }
 
     if (!message.contextNodeIds || message.contextNodeIds.length === 0) {
-      notifications.show({
-        title: "Anotasi Tidak Tersedia",
-        message: "Anotasi hanya tersedia untuk respons AI yang berdasarkan dokumen yang dilampirkan.",
-        color: "yellow",
-        position: "top-right",
-      })
+      notifyDashboard("Anotasi tidak tersedia", "Anotasi hanya tersedia untuk respons AI yang berdasarkan dokumen yang dilampirkan.")
       // Clear selection to prevent re-triggering
       selection.empty()
       return
@@ -865,12 +647,7 @@ Apakah Anda ingin membuka panduan penggunaan?`,
     )?.url
 
     if (!documentUrl || documentUrl === "#") {
-      notifications.show({
-        title: "Tidak Ada Dokumen Sumber",
-        message: "Respons AI ini tidak memiliki dokumen sumber yang dapat dianotasi.",
-        color: "yellow",
-        position: "top-right",
-      })
+      notifyDashboard("Tidak ada dokumen sumber", "Respons AI ini tidak memiliki dokumen sumber yang dapat dianotasi.")
       // Clear selection to prevent re-triggering
       selection.empty()
       return
@@ -885,232 +662,32 @@ Apakah Anda ingin membuka panduan penggunaan?`,
     selection.empty()
   }, []);
 
-  return (
-    <Box
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        maxHeight: "90vh",
-        overflow: "hidden",
-        position: "relative",
-        background: isDark
-          ? `linear-gradient(180deg, ${theme.colors.dark[8]} 0%, ${theme.colors.dark[9]} 100%)`
-          : `linear-gradient(180deg, ${theme.colors.gray[0]} 0%, white 100%)`,
-      }}
-    >
-      {/* Enhanced Chat History */}
-      <ScrollArea
-        ref={scrollAreaRef}
-        style={{
-          height: "500px",
-          minHeight: 0,
-        }}
-        styles={{
-          viewport: {
-            "& > div": {
-              display: "flex !important",
-              flexDirection: "column",
-              justifyContent: "flex-start",
-            },
-          },
-        }}
-        onScrollPositionChange={handleScrollPositionChange}
-      >
-        <Stack
-          gap="lg"
-          p="md"
-          style={{
-            minHeight: "535px",
-          }}
-        >
-          {/* Loading indicator for infinite scroll */}
-          {loadingMore && <LoadingMoreIndicator />}
+  const closePdf = () => { setModalOpened(false); setSelectedPDF(null); };
+  const closeNode = () => setDetailModalNode(null);
 
-          {/* Debug button - remove in production */}
+  return <section className={styles.chatPanel}>
+    <div ref={scrollAreaRef} className={styles.chatHistory} data-radix-scroll-area-viewport onScroll={(event) => handleScrollPositionChange({ x: event.currentTarget.scrollLeft, y: event.currentTarget.scrollTop })}>
+      <div className={styles.chatMessages}>
+        {loadingMore && <p className={styles.chatLoadingMore} role="status"><span className={styles.spinner} />Memuat pesan sebelumnya…</p>}
+        {!hasMore && messages.length > 0 && <p className={styles.chatHistoryStart}><IconMessageCircle size={15} /> Awal percakapan</p>}
+        {messages.length === 0 && !loadingMore ? <div className={styles.chatEmpty}><span className={styles.iconTile}><IconSparkles size={24} /></span><h3>Mulai percakapan</h3><p>Ajukan pertanyaan atau pilih dokumen untuk memulai.</p></div> : <>
+          {messages.map((msg, idx) => <ChatMessageItem key={`${idx}-${msg.sender}`} msg={msg} onTextSelect={handleTextSelectionForAnnotation} onOpenHelp={() => setHelpModalOpened(true)} handlerOpenPdf={handlerOpenPdf} />)}
+          {isLoading && <div className={`${styles.chatMessage} ${styles.aiMessage}`}><header className={styles.chatMessageHeader}><span className={styles.chatAvatar}><IconBrain size={15} /></span><strong>AI Assistant</strong></header><p className={styles.thinkingStatus} role="status">Sedang berpikir<span>···</span></p></div>}
+          <div ref={messageEndRef} />
+        </>}
+      </div>
+    </div>
+    <ChatInputArea isLoading={isLoading} contextNodes={contextNodes} suggestions={suggestions} showLeftScroll={showLeftScroll} showRightScroll={showRightScroll} suggestionContainerRef={suggestionContainerRef} onSendMessage={handleSend} onRemoveContextNode={removeContextNode} onScrollSuggestions={scrollSuggestions} />
 
-          {/* Info if reached beginning of chat */}
-          {!hasMore && messages.length > 0 && (
-            <Box p="md" style={{ textAlign: "center" }}>
-              <Divider
-                label={
-                  <Group gap="xs">
-                    <IconMessageCircle size={16} />
-                    <Text size="sm" c="dimmed" fw={500}>
-                      Awal percakapan
-                    </Text>
-                  </Group>
-                }
-                labelPosition="center"
-              />
-            </Box>
-          )}
-
-          {messages.length === 0 && !loadingMore ? (
-            <Box
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                height: "100%",
-                minHeight: "505px",
-                textAlign: "center",
-              }}
-            >
-              <Stack align="center" gap="md">
-                <ThemeIcon size={60} radius="xl" variant="gradient" gradient={{ from: "blue", to: "cyan", deg: 45 }}>
-                  <IconSparkles size={30} />
-                </ThemeIcon>
-                <Text c="dimmed" size="lg" fw={500}>
-                  Mulai Percakapan dengan AI Assistant
-                </Text>
-                <Text c="dimmed" size="sm">
-                  Ajukan pertanyaan atau pilih dokumen untuk memulai
-                </Text>
-              </Stack>
-            </Box>
-          ) : (
-            <>
-              {messages.map((msg, idx) => (
-                <ChatMessageItem
-                  key={idx} // Sebaiknya gunakan ID unik dari pesan jika ada
-                  msg={msg}
-                  isDark={isDark}
-                  theme={theme}
-                  onTextSelect={handleTextSelectionForAnnotation}
-                  onOpenHelp={() => setHelpModalOpened(true)}
-                  handlerOpenPdf={handlerOpenPdf}
-                />
-              ))}
-              {isLoading && <LoadingMessage />}
-              <div ref={messageEndRef} />
-            </>
-          )}
-        </Stack>
-      </ScrollArea>
-
-      <ChatInputArea
-        isLoading={isLoading}
-        isDark={isDark}
-        theme={theme}
-        contextNodes={contextNodes}
-        suggestions={suggestions}
-        showLeftScroll={showLeftScroll}
-        showRightScroll={showRightScroll}
-        suggestionContainerRef={suggestionContainerRef}
-        onSendMessage={handleSend}
-        onRemoveContextNode={removeContextNode}
-        // onSuggestionClick={handleSuggestionClick}
-        onScrollSuggestions={scrollSuggestions}
-      />
-
-      {/* Enhanced Modals */}
-      <Modal
-        opened={modalOpened}
-        onClose={() => {
-          setModalOpened(false)
-          setSelectedPDF(null)
-        }}
-        title={
-          <Group gap="sm">
-            <ThemeIcon variant="gradient" gradient={{ from: "blue", to: "cyan" }} size="md">
-              <IconCircleDot size={16} />
-            </ThemeIcon>
-            <Text fw={600}>Lihat Artikel</Text>
-          </Group>
-        }
-        size="90%"
-        padding="sm"
-        centered
-        overlayProps={{ blur: 3 }}
-        styles={{
-          content: {
-            height: "90vh",
-            display: "flex",
-            flexDirection: "column",
-            padding: 0,
-            position: "relative",
-          },
-          body: {
-            flex: 1,
-            overflow: "hidden",
-            padding: 0,
-            position: "relative",
-          },
-        }}
-      >
-        {selectedPDF && (
-          <div style={{ height: "100%", position: "relative" }}>
-            <WebViewer fileUrl={selectedPDF} session={session} />
-          </div>
-        )}
-      </Modal>
-
-      <Modal
-        opened={!!detailModalNode}
-        onClose={() => {
-          setDetailModalNode(null)
-        }}
-        title={
-          <Group gap="sm">
-            <ThemeIcon variant="gradient" gradient={{ from: "blue", to: "cyan" }} size="md">
-              <IconCircleDot size={16} />
-            </ThemeIcon>
-            <Box>
-              <Text fw={600}>{detailModalNode?.title || "Detail Artikel"}</Text>
-              <Text size="xs" c="dimmed">
-                Informasi lengkap artikel
-              </Text>
-            </Box>
-          </Group>
-        }
-        size="75vw"
-        radius="lg"
-        shadow="xl"
-      >
-        <NodeDetail
-          node={detailModalNode}
-          onClose={() => {
-            setDetailModalNode(null)
-          }}
-          session={session}
-        />
-      </Modal>
-
-      {/* Enhanced Annotation Modal */}
-      <AnnotationModal
-        opened={showAnnotationModal}
-        onClose={() => {
-        setShowAnnotationModal(false);
-        // Anda bisa reset state lain di sini jika perlu
-        setHighlightedText("");
-        setAnnotationTargetUrl(null);
-        }}
-        highlightedText={highlightedText}
-        targetUrl={annotationTargetUrl}
-      isDark={isDark}
-      />
-
-      <HelpGuideModal 
-        opened={helpModalOpened} 
-        onClose={() => setHelpModalOpened(false)} 
-      />
-
-      {/* Add CSS animations */}
-      <style jsx>{`
-        @keyframes shimmer {
-          0% { background-position: -200% 0; }
-          100% { background-position: 200% 0; }
-        }
-        
-        @keyframes bounce {
-          0%, 80%, 100% { 
-            transform: scale(0);
-          } 40% { 
-            transform: scale(1.0);
-          }
-        }
-      `}</style>
-    </Box>
-  )
+    <NativeDialog open={modalOpened} onClose={closePdf} labelledBy="chat-pdf-title" className={styles.pdfDialog}>
+      <header className={styles.dialogHeader}><h2 className={styles.dialogTitle} id="chat-pdf-title">Lihat artikel</h2><button className={styles.dialogClose} onClick={closePdf} type="button" aria-label="Tutup PDF">×</button></header>
+      {selectedPDF && <div className={styles.pdfViewer}><WebViewer fileUrl={selectedPDF} session={session} /></div>}
+    </NativeDialog>
+    <NativeDialog open={!!detailModalNode} onClose={closeNode} labelledBy="chat-node-title" className={styles.detailDialog}>
+      <header className={styles.dialogHeader}><div><h2 className={styles.dialogTitle} id="chat-node-title">{detailModalNode?.title || "Detail artikel"}</h2><p className={styles.muted}>Informasi lengkap artikel</p></div><button className={styles.dialogClose} onClick={closeNode} type="button" aria-label="Tutup detail">×</button></header>
+      <NodeDetail node={detailModalNode} onClose={closeNode} session={session} />
+    </NativeDialog>
+    <AnnotationModal opened={showAnnotationModal} onClose={() => { setShowAnnotationModal(false); setHighlightedText(""); setAnnotationTargetUrl(null); }} highlightedText={highlightedText} targetUrl={annotationTargetUrl} isDark={false} />
+    <HelpGuideModal opened={helpModalOpened} onClose={() => setHelpModalOpened(false)} />
+  </section>;
 }

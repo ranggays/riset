@@ -1,230 +1,62 @@
-"use client"
+"use client";
 
-import { Modal, Table, Text, Loader, Skeleton, Group, Badge, Paper, ThemeIcon, Box, Stack } from "@mantine/core";
-import type { ExtendedEdge } from "../../types";
 import { useEffect, useState } from "react";
-import { IconArrowDown, IconNetwork, IconArticle, IconEye } from "@tabler/icons-react";
+import type { ExtendedEdge } from "../../types";
+import { IconArrowRight, IconNetwork, IconArticle, IconEye } from "@tabler/icons-react";
+import styles from "../../Dashboard.module.css";
 
-interface EdgeDetailProps {
-  edge: ExtendedEdge | null;
-  onClose: () => void;
-  onOpenNodeDetail?:(nodeId:string) => void;
-};
-
+interface EdgeDetailProps { edge: ExtendedEdge | null; onClose: () => void; onOpenNodeDetail?: (nodeId: string) => void; }
 interface PopulatedEdge {
-  id: string;
-  label: string | null;
-  relation: string | null;
-  from: {
-    id: string;
-    title: string;
-  };
-  to: {
-    id: string;
-    title: string;
-  };
-};
-
-const relationDisplayNames: Record<string, string> = {
-  'background': 'Latar Belakang',
-  'method': 'Metodologi',
-  'goal': 'Tujuan',
-  'future': 'Arahan Masa Depan',
-  'gap': 'Gap Penelitian'
-};
-
-const relationColors: Record<string, string> = {
-  'background': 'blue',
-  'method': 'green',
-  'gap': 'red',
-  'future': 'violet',
-  'goal': 'orange'
-};
-
-function getDisplayRelation(relation: string | null | undefined) {
-  if (!relation) return '-';
-  const mapping: Record<string, string> = {
-    'same_background': 'background',
-    'extended_method': 'method',
-    'shares_goal': 'goal',
-    'follows_future_work': 'future',
-    'addresses_same_gap': 'gap'
-  };
-  const internalKey = mapping[relation] || relation;
-  return relationDisplayNames[internalKey] || relation;
+  id: string; label: string | null; relation: string | null;
+  from: { id: string; title: string }; to: { id: string; title: string };
 }
 
-function getRelationColor(relation: string | null | undefined) {
-  if (!relation) return 'gray';
-  const mapping: Record<string, string> = {
-    'same_background': 'background',
-    'extended_method': 'method',
-    'shares_goal': 'goal',
-    'follows_future_work': 'future',
-    'addresses_same_gap': 'gap'
-  };
-  const key = mapping[relation] || relation;
-  return relationColors[key] || 'gray';
-}
+const names: Record<string, string> = { background: "Latar Belakang", method: "Metodologi", goal: "Tujuan", future: "Arahan Masa Depan", gap: "Kesenjangan" };
+const relations: Record<string, string> = { same_background: "background", extended_method: "method", shares_goal: "goal", follows_future_work: "future", addresses_same_gap: "gap" };
+const getDisplayRelation = (value?: string | null) => value ? names[relations[value] || value] || value : "-";
 
-export default function EdgeDetail({ edge, onClose, onOpenNodeDetail }: EdgeDetailProps) {
-
+export default function EdgeDetail({ edge, onOpenNodeDetail }: EdgeDetailProps) {
   const [edgeNode, setEdgeNode] = useState<PopulatedEdge>();
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!edge) return;
-
-    if (edge.fromTitle && edge.toTitle) {
-      setEdgeNode({
-        id: edge.id?.toString() ?? '',
-        relation: edge.relation || null,
-        from: { id: edge.from?.toString() ?? '', title: edge.fromTitle},
-        to: { id: edge.to?.toString() ?? '', title: edge.toTitle},
-        label: edge.label || ''
-      });
-      return;
-    }
-
-    if (edge?.id){
-      setLoading(true);
-      const url = `/api/edges/${edge.id}`;
-      fetch(url)
-        .then(async (res) => {
-          if (!res.ok){
-            const responseBody = await res.text();
-            throw new Error(
-              `GET ${url} failed: ${res.status} ${res.statusText}. Response: ${responseBody.slice(0, 1000)}`
-            );
-          }
-          return res.json();
-        })
-        .then((data) => setEdgeNode(data))
-        .catch((err) => console.error('Failed to fetch edge details:', {
-          edgeId: edge.id,
-          url,
-          error: err instanceof Error
-            ? { name: err.name, message: err.message, stack: err.stack }
-            : String(err),
-        }))
-        .finally(() => setLoading(false));
-    }
-  }, [edge?.id]);
+    if (edge.fromTitle && edge.toTitle) return;
+    if (!edge.id) return;
+    const controller = new AbortController();
+    const url = `/api/edges/${edge.id}`;
+    const loadingFrame = window.requestAnimationFrame(() => setLoading(true));
+    fetch(url, { signal: controller.signal }).then(async (response) => {
+      if (!response.ok) throw new Error(`GET ${url} failed: ${response.status} ${response.statusText}`);
+      return response.json();
+    }).then((data) => setEdgeNode(data)).catch((error) => {
+      if (error.name !== "AbortError") console.error("Failed to fetch edge details:", error);
+    }).finally(() => setLoading(false));
+    return () => { window.cancelAnimationFrame(loadingFrame); controller.abort(); };
+  }, [edge]);
 
   if (!edge) return null;
-
-return (
-    <Stack gap="lg">
-      <Paper p="md" radius="md" withBorder>
-        <Group justify="space-between" mb="md">
-          <Badge 
-            size="lg" 
-            variant="dot" 
-            color={getRelationColor(edge.relation)}
-          >
-            {getDisplayRelation(edge.relation)}
-          </Badge>
-          <ThemeIcon 
-            size="lg" 
-            variant="light" 
-            color={getRelationColor(edge.relation)}
-            radius="md"
-          >
-            <IconNetwork size={20} />
-          </ThemeIcon>
-        </Group>
-
-        <Stack gap="lg">
-          <Paper p="sm" radius="md" bg="var(--mantine-color-default-hover)">
-            <Group align="flex-start">
-              <ThemeIcon size="md" variant="light" color="blue">
-                <IconArticle size={16} />
-              </ThemeIcon>
-              <Box style={{ flex: 1 }}>
-                <Text size="sm" fw={500} color="dimmed">Dari Artikel:</Text>
-                <Box>
-                  {loading ? (
-                    <Skeleton height={20} width="100%" />
-                  ) : (
-                    <>
-                    <Box style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
-                    <Text size="md" style={{ wordBreak: 'break-word' }}>
-                      {edgeNode?.from?.title}
-                    </Text>
-                    {edgeNode?.from?.id && onOpenNodeDetail && (
-                      <ThemeIcon
-                        size="sm"
-                        variant="light"
-                        color="gray"
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => onOpenNodeDetail(edgeNode.from.id)}>
-                        <IconEye size={16} />
-                      </ThemeIcon>
-                    )}
-                    </Box>
-                    </>
-                  )}
-                </Box>
-              </Box>
-            </Group>
-          </Paper>
-
-          <Group justify="center">
-            <ThemeIcon 
-              size="md" 
-              variant="light" 
-              color={getRelationColor(edge.relation)}
-            >
-              <IconArrowDown size={16} />
-            </ThemeIcon>
-          </Group>
-
-          <Paper p="sm" radius="md" bg="var(--mantine-color-default-hover)">
-            <Group align="flex-start">
-              <ThemeIcon size="md" variant="light" color="blue">
-                <IconArticle size={16} />
-              </ThemeIcon>
-              <Box style={{ flex: 1 }}>
-                <Text size="sm" fw={500} color="dimmed">Ke Artikel:</Text>
-                <Box>
-                  {loading ? (
-                    <Skeleton height={20} width="100%" />
-                  ) : (
-                    <>
-                    <Box style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
-                    <Text size="md" style={{ wordBreak: 'break-word' }}>
-                      {edgeNode?.to?.title}
-                    </Text>
-                    {edgeNode?.to?.id && onOpenNodeDetail && (
-                      <ThemeIcon
-                        size="sm"
-                        variant="light"
-                        color="gray"
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => onOpenNodeDetail(edgeNode.to.id)}>
-                        <IconEye size={16} />
-                      </ThemeIcon>
-                    )}
-                    </Box>
-                    </>
-                  )}
-                </Box>
-              </Box>
-            </Group>
-          </Paper>
-        </Stack>
-      </Paper>
-
-      {edge.label && (
-        <Paper p="md" radius="md" withBorder>
-          <Text size="sm" fw={500} color="dimmed" mb="xs">
-            Deskripsi Hubungan:
-          </Text>
-          <Text size="sm" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-            {edge.label || edge.displayDescription }
-          </Text>
-        </Paper>
-      )}
-    </Stack>
-  );
+  const directEdgeNode: PopulatedEdge | undefined = edge.fromTitle && edge.toTitle ? {
+    id: edge.id?.toString() ?? "", relation: edge.relation || null,
+    from: { id: edge.from?.toString() ?? "", title: edge.fromTitle },
+    to: { id: edge.to?.toString() ?? "", title: edge.toTitle }, label: edge.label || "",
+  } : undefined;
+  const detail = directEdgeNode || edgeNode;
+  const endpoint = (title: string, node?: PopulatedEdge["from"]) => <section className={styles.edgeEndpoint}>
+    <span className={styles.detailIcon}><IconArticle size={16} /></span><div className={styles.edgeEndpointBody}><h3>{title}</h3>
+      {loading ? <span className={styles.skeletonLine} /> : <div className={styles.edgeEndpointTitle}><p>{node?.title || "Artikel tidak ditemukan"}</p>{node?.id && onOpenNodeDetail && <button className={styles.iconButton} onClick={() => onOpenNodeDetail(node.id)} type="button" aria-label="Lihat detail artikel"><IconEye size={17} /></button>}</div>}
+    </div>
+  </section>;
+  return <div className={styles.edgeDetail}>
+    <section className={`${styles.detailIntro} ${styles.edgeIntro}`}>
+      <span className={styles.detailType}><IconNetwork size={16} /> Jenis hubungan</span>
+      <h3 className={styles.edgeRelation}>{getDisplayRelation(edge.relation)}</h3>
+      <div className={styles.edgeFlow} aria-label="Arah hubungan antarartikel">
+        {endpoint("Dari artikel", detail?.from)}
+        <div className={styles.edgeArrow} aria-hidden="true"><IconArrowRight size={19} /></div>
+        {endpoint("Ke artikel", detail?.to)}
+      </div>
+    </section>
+    {(edge.label || edge.displayDescription) && <section className={styles.edgeDescription}><h3>Deskripsi hubungan</h3><p>{edge.label || edge.displayDescription}</p></section>}
+  </div>;
 }

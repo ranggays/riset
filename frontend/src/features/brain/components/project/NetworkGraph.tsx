@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Network } from "vis-network";
 import { DataSet } from "vis-data";
-import { Loader, Box, Group, Button, Stack } from "@mantine/core";
 import { type ExtendedNode, type ExtendedEdge, type NetworkGraphProps } from "../../types";
 import { IconArrowUp, IconArrowDown, IconArrowLeft, IconArrowRight, IconZoomIn, IconZoomOut, IconMaximize } from "@tabler/icons-react";
+import styles from "../../Dashboard.module.css";
 
 export default function NetworkGraph(
     {nodes, edges, onNodeClick, onEdgeClick}: NetworkGraphProps
@@ -64,6 +64,10 @@ export default function NetworkGraph(
 
     useEffect(() => {
         if (!containerRef.current) return;
+        const graphContainer = containerRef.current;
+        let lastWidth = 0;
+        let lastHeight = 0;
+        let hasFittedToVisibleSize = false;
         nodeDataSetRef.current = new DataSet<ExtendedNode>();
         edgeDataSetRef.current = new DataSet<ExtendedEdge>();
 
@@ -120,6 +124,7 @@ export default function NetworkGraph(
             layout: {
             improvedLayout: true,
             },
+            autoResize: true,
         },
         );
 
@@ -141,7 +146,27 @@ export default function NetworkGraph(
             }
         });
 
+        const resizeObserver = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            if (!entry) return;
+            const width = Math.floor(entry.contentRect.width);
+            const height = Math.floor(entry.contentRect.height);
+            if (width < 1 || height < 1 || (width === lastWidth && height === lastHeight)) return;
+
+            lastWidth = width;
+            lastHeight = height;
+            networkRef.current?.setSize(`${width}px`, `${height}px`);
+            networkRef.current?.redraw();
+
+            if (!hasFittedToVisibleSize && (nodeDataSetRef.current?.getIds().length ?? 0) > 0) {
+                networkRef.current?.fit({ animation: false });
+                hasFittedToVisibleSize = true;
+            }
+        });
+        resizeObserver.observe(graphContainer);
+
         return () => {
+        resizeObserver.disconnect();
         if (networkRef.current) {
             networkRef.current.destroy();
             networkRef.current = null;
@@ -188,102 +213,17 @@ export default function NetworkGraph(
         };
     }, [nodes, edges]);
 
-    return(
-        <Box style={{ position: 'relative', width: '100%', height: '610px' }}>
-            { isLoading && (
-                <Loader
-                size="xl"
-                variant="dots"
-                color="blue"
-                style={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    zIndex: 1
-                }}
-                />
-            )}
-
-            {/* Navigation Controls */}
-            <Group 
-                style={{ 
-                position: 'absolute', 
-                left: 20, 
-                bottom: 20,
-                zIndex: 1 
-                }}
-                gap="xs"
-            >
-                <Stack gap="xs" align="center">
-                <Button 
-                    size="sm" 
-                    variant="light"
-                    onClick={() => handleMove('up')}
-                >
-                    <IconArrowUp size={16} />
-                </Button>
-
-                <Group gap="xs">
-                    <Button 
-                    size="sm" 
-                    variant="light"
-                    onClick={() => handleMove('left')}
-                    >
-                    <IconArrowLeft size={16} />
-                    </Button>
-                    <Button 
-                    size="sm" 
-                    variant="light"
-                    onClick={() => handleMove('down')}
-                    >
-                    <IconArrowDown size={16} />
-                    </Button>
-                    <Button 
-                    size="sm" 
-                    variant="light"
-                    onClick={() => handleMove('right')}
-                    >
-                    <IconArrowRight size={16} />
-                    </Button>
-                </Group>
-                </Stack>
-            </Group>
-
-            {/* Right Bottom Controls - Zoom and Fit */}
-            <Group 
-                style={{ 
-                position: 'absolute', 
-                right: 20, 
-                bottom: 20,
-                zIndex: 1
-                }}
-                gap="xs"
-            >
-                <Button 
-                size="sm" 
-                variant="light"
-                onClick={() => handleZoomIn('in')}
-                >
-                <IconZoomIn size={16} />
-                </Button>
-                <Button 
-                size="sm" 
-                variant="light"
-                onClick={() => handleZoomIn('out')}
-                >
-                <IconZoomOut size={16} />
-                </Button>
-                <Button 
-                size="sm" 
-                variant="light"
-                onClick={handleFitView}
-                >
-                <IconMaximize size={16} />
-                </Button>
-            </Group>
-
-            <div ref={containerRef} style={{ width: '100%', height: '100%', border: '1px solid black' }} />
-        </Box>
-    )
+    return <div className={styles.graphCanvas}>
+        {isLoading && <span className={styles.graphLoader} role="status" aria-label="Memuat peta konsep" />}
+        <div className={styles.graphNavigation} aria-label="Geser peta">
+            <button className={styles.graphControl} onClick={() => handleMove("up")} type="button" aria-label="Geser ke atas"><IconArrowUp size={16} /></button>
+            <div><button className={styles.graphControl} onClick={() => handleMove("left")} type="button" aria-label="Geser ke kiri"><IconArrowLeft size={16} /></button><button className={styles.graphControl} onClick={() => handleMove("down")} type="button" aria-label="Geser ke bawah"><IconArrowDown size={16} /></button><button className={styles.graphControl} onClick={() => handleMove("right")} type="button" aria-label="Geser ke kanan"><IconArrowRight size={16} /></button></div>
+        </div>
+        <div className={styles.graphZoom} aria-label="Zoom peta">
+            <button className={styles.graphControl} onClick={() => handleZoomIn("in")} type="button" aria-label="Perbesar"><IconZoomIn size={16} /></button>
+            <button className={styles.graphControl} onClick={() => handleZoomIn("out")} type="button" aria-label="Perkecil"><IconZoomOut size={16} /></button>
+            <button className={styles.graphControl} onClick={handleFitView} type="button" aria-label="Pas ke layar"><IconMaximize size={16} /></button>
+        </div>
+        <div className={styles.graphSurface} ref={containerRef} />
+    </div>;
 }

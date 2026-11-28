@@ -1,11 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Box, Container, Text, useMantineColorScheme, useMantineTheme } from "@mantine/core";
-import { IconSquareRoundedX } from "@tabler/icons-react";
-import { modals } from "@mantine/modals";
-import { notifications } from "@mantine/notifications";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import type { BrainstormingProject, BrainstormingSessionApiResponse } from "./types";
 import {
   createBrainstormingSession,
@@ -16,8 +12,10 @@ import {
 } from "./api/brainstormingSessions";
 import { DashboardLayout } from "./components/DashboardLayout";
 import { DashboardToolbar } from "./components/DashboardToolbar";
+import { NativeDialog } from "./components/NativeDialog";
 import { ProjectModals, type NewProjectForm } from "./components/ProjectModals";
 import { ProjectsGrid } from "./components/ProjectsGrid";
+import styles from "./Dashboards.module.css";
 
 const EMPTY_PROJECT_FORM: NewProjectForm = {
   title: "",
@@ -25,26 +23,43 @@ const EMPTY_PROJECT_FORM: NewProjectForm = {
   coverColor: "#4c6ef5",
 };
 
+interface ToastNotice {
+  title: string;
+  message: string;
+  isError: boolean;
+}
+
 export default function ProjectDashboard() {
   const [projects, setProjects] = useState<BrainstormingProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<BrainstormingProject | null>(null);
+  const [deleteProject, setDeleteProject] = useState<BrainstormingProject | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sidebarOpened, setSidebarOpened] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [newProject, setNewProject] = useState<NewProjectForm>(EMPTY_PROJECT_FORM);
-
-  const { colorScheme } = useMantineColorScheme();
-  const theme = useMantineTheme();
-  const isDark = colorScheme === "dark";
+  const [notice, setNotice] = useState<ToastNotice | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pathname = usePathname();
   const router = useRouter();
 
-  const setButtonLoading = (key: string, isLoading: boolean) => {
-    setLoadingStates((current) => ({ ...current, [key]: isLoading }));
-  };
+  const showNotice = useCallback((title: string, message: string, isError = false) => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setNotice({ title, message, isError });
+    noticeTimer.current = setTimeout(() => setNotice(null), 4500);
+  }, []);
+
+  useEffect(() => {
+    const mountTimer = setTimeout(() => setMounted(true), 0);
+    return () => {
+      clearTimeout(mountTimer);
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    };
+  }, []);
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -58,13 +73,9 @@ export default function ProjectDashboard() {
         chatCount: project._count?.ChatMessage || 0,
         lastActivity: new Date(
           project.lastActivity || project.updatedAt || project.createdAt
-        ).toLocaleDateString("id-ID", {
-          day: "numeric",
-          month: "short",
-        }),
+        ).toLocaleDateString("id-ID", { day: "numeric", month: "short" }),
         createdAt: new Date(project.createdAt).toISOString().split("T")[0],
       }));
-
       setProjects(formatted);
     } catch (error) {
       console.error("Gagal memuat proyek", error);
@@ -74,34 +85,27 @@ export default function ProjectDashboard() {
   }, []);
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
     const getSessionId = async () => {
       try {
         const data = await getSessionContext();
-
-        if (data.sessionId) {
-          setSessionId(data.sessionId);
-        } else {
-          setSessionId(null);
-        }
-      } catch (error) {
+        setSessionId(data.sessionId || null);
+      } catch {
         setSessionId(null);
       }
     };
-
-    getSessionId();
+    void getSessionId();
   }, []);
 
   useEffect(() => {
-    fetchProjects();
+    const timer = setTimeout(() => { void fetchProjects(); }, 0);
+    return () => clearTimeout(timer);
   }, [fetchProjects]);
 
   useEffect(() => {
-    return () => setLoadingStates({});
-  }, []);
+    if (pathname !== "/projects") return;
+    const timer = setTimeout(() => setLoadingStates({}), 0);
+    return () => clearTimeout(timer);
+  }, [pathname]);
 
   const filteredProjects = projects.filter((project) =>
     project.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -112,118 +116,48 @@ export default function ProjectDashboard() {
 
   const handleCreateProject = async () => {
     if (!newProject.title.trim()) return;
-
     try {
       await createBrainstormingSession(newProject);
       await fetchProjects();
       setCreateModalOpen(false);
       setNewProject(EMPTY_PROJECT_FORM);
-
-      setMounted(false);
-      setTimeout(() => setMounted(true), 100);
-      notifications.show({
-        title: "Success",
-        message: "Berhasil membuat sesi",
-        color: "green",
-        position: "top-right",
-      });
+      showNotice("Success", "Berhasil membuat sesi");
     } catch (error) {
       console.error("Error", error);
-      notifications.show({
-        title: "Gagal",
-        message: "Gagal membuat sesi",
-        color: "red",
-        position: "top-right",
-      });
+      showNotice("Gagal", "Gagal membuat sesi", true);
     }
   };
 
-  const handleDeleteProject = async (projectId: string) => {
+  const handleDeleteProject = async () => {
+    if (!deleteProject) return;
+    setDeleteLoading(true);
     try {
-      await deleteBrainstormingSession(projectId);
+      await deleteBrainstormingSession(deleteProject.id);
       await fetchProjects();
-      notifications.show({
-        title: "Success",
-        message: "Berhasil hapus sesi",
-        color: "green",
-        position: "top-right",
-      });
+      showNotice("Success", "Berhasil hapus sesi");
+      setDeleteProject(null);
     } catch (error) {
       console.error(error);
-      notifications.show({
-        title: "Gagal",
-        message: "Gagal hapus sesi",
-        color: "red",
-        position: "top-right",
-      });
+      showNotice("Gagal", "Gagal hapus sesi", true);
+    } finally {
+      setDeleteLoading(false);
     }
-  };
-
-  const confirmDeleteProject = (project: BrainstormingProject) => {
-    modals.openConfirmModal({
-      title: (
-        <Text size="lg" fw={600} c="red">
-          🗑️ Konfirmasi Hapus sesi
-        </Text>
-      ),
-      children: (
-        <Box>
-          <Text size="sm" mb="md">Apakah Anda yakin ingin menghapus sesi berikut?</Text>
-          <Box
-            p="md"
-            style={{
-              backgroundColor: isDark ? theme.colors.dark[5] : theme.colors.gray[0],
-              borderRadius: theme.radius.md,
-              border: `1px solid ${isDark ? theme.colors.red[8] : theme.colors.red[2]}`,
-            }}
-          >
-            <Text fw={600} size="sm" mb="xs">{project.title}</Text>
-            <Text size="xs" c="dimmed">ID: {project.id}</Text>
-          </Box>
-          <Text size="sm" c="red" fw={500} mt="md">
-            ⚠️ Tindakan ini tidak dapat dibatalkan!
-          </Text>
-        </Box>
-      ),
-      labels: { confirm: "Ya, Hapus Sesi", cancel: "Batal" },
-      confirmProps: {
-        color: "red",
-        size: "md",
-        leftSection: <IconSquareRoundedX size={16} />,
-      },
-      cancelProps: { variant: "outline", size: "md" },
-      size: "md",
-      centered: true,
-      onConfirm: () => handleDeleteProject(project.id),
-    });
   };
 
   const handleEditProject = async () => {
     if (!editingProject) return;
-
     try {
       await updateBrainstormingSession(editingProject.id, {
         title: editingProject.title,
         description: editingProject.description,
         coverColor: editingProject.coverColor,
       });
-
       await fetchProjects();
       setEditingProject(null);
-      notifications.show({
-        title: "Success",
-        message: "Berhasil update sesi",
-        color: "green",
-        position: "top-right",
-      });
+      showNotice("Success", "Berhasil update sesi");
     } catch (error) {
       console.error("Edit error:", error);
-      notifications.show({
-        title: "Gagal",
-        message: "Gagal update sesi",
-        color: "red",
-        position: "top-right",
-      });
+      showNotice("Gagal", "Gagal update sesi", true);
     }
   };
 
@@ -239,22 +173,21 @@ export default function ProjectDashboard() {
   };
 
   const handleOpenProject = (projectId: string) => {
-    setButtonLoading(`project-${projectId}`, true);
+    setLoadingStates((current) => ({ ...current, [`project-${projectId}`]: true }));
     router.push(`/projects/${projectId}`);
   };
 
   const handleOpenDraft = (projectId: string) => {
-    setButtonLoading(`draft-${projectId}`, true);
-
+    setLoadingStates((current) => ({ ...current, [`draft-${projectId}`]: true }));
     if (!sessionId) {
       console.error("SessionId not available");
-      setButtonLoading(`draft-${projectId}`, false);
+      setLoadingStates((current) => ({ ...current, [`draft-${projectId}`]: false }));
       return;
     }
 
     const writerUrl = `${process.env.NEXT_PUBLIC_WRITER_APP_URL}/project/${projectId}/draft?sessionId=${sessionId}`;
     window.open(writerUrl, "_blank");
-    setButtonLoading(`draft-${projectId}`, false);
+    setLoadingStates((current) => ({ ...current, [`draft-${projectId}`]: false }));
   };
 
   const closeCreateModal = () => {
@@ -263,37 +196,85 @@ export default function ProjectDashboard() {
   };
 
   return (
-    <Container size="xl" py="xl" style={{ minHeight: "100vh" }}>
-      <DashboardLayout
-        sidebarOpened={sidebarOpened}
-        onToggleSidebar={() => setSidebarOpened((opened) => !opened)}
-        mounted={mounted}
-        onSessionCreated={handleSessionCreatedFromSidebar}
-      >
+    <DashboardLayout
+      mounted={mounted}
+      onSessionCreated={handleSessionCreatedFromSidebar}
+      onToggleSidebar={() => setSidebarOpened((opened) => !opened)}
+      sidebarOpened={sidebarOpened}
+    >
+      <div className={styles.content}>
         <DashboardToolbar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
         <ProjectsGrid
-          loading={loading}
           filteredProjects={filteredProjects}
-          searchQuery={searchQuery}
+          loading={loading}
           loadingStates={loadingStates}
           onCreateProject={() => setCreateModalOpen(true)}
-          onOpenProject={handleOpenProject}
-          onOpenDraft={handleOpenDraft}
-          onEditProject={setEditingProject}
+          onDeleteProject={setDeleteProject}
           onDuplicateProject={handleDuplicateProject}
-          onDeleteProject={confirmDeleteProject}
+          onEditProject={setEditingProject}
+          onOpenDraft={handleOpenDraft}
+          onOpenProject={handleOpenProject}
+          searchQuery={searchQuery}
         />
-        <ProjectModals
-          createModalOpen={createModalOpen}
-          onCloseCreateModal={closeCreateModal}
-          newProject={newProject}
-          setNewProject={setNewProject}
-          onCreateProject={handleCreateProject}
-          editingProject={editingProject}
-          setEditingProject={setEditingProject}
-          onSaveProject={handleEditProject}
-        />
-      </DashboardLayout>
-    </Container>
+      </div>
+
+      <ProjectModals
+        createModalOpen={createModalOpen}
+        editingProject={editingProject}
+        newProject={newProject}
+        onCloseCreateModal={closeCreateModal}
+        onCreateProject={handleCreateProject}
+        onSaveProject={handleEditProject}
+        setEditingProject={setEditingProject}
+        setNewProject={setNewProject}
+      />
+
+      <NativeDialog
+        open={!!deleteProject}
+        onClose={() => { if (!deleteLoading) setDeleteProject(null); }}
+        labelledBy="delete-project-title"
+      >
+        <div className={styles.dialogHeader}>
+          <div>
+            <h2 className={styles.dialogTitle} id="delete-project-title">Konfirmasi Hapus Sesi</h2>
+            <p className={styles.muted}>Apakah Anda yakin ingin menghapus sesi berikut?</p>
+          </div>
+          <button
+            aria-label="Tutup dialog"
+            className={styles.dialogClose}
+            disabled={deleteLoading}
+            onClick={() => setDeleteProject(null)}
+            type="button"
+          >×</button>
+        </div>
+        {deleteProject && (
+          <div className={styles.dialogBody}>
+            <div className={styles.deleteProjectPreview}>
+              <strong>{deleteProject.title}</strong>
+              <span>ID: {deleteProject.id}</span>
+            </div>
+            <p className={styles.warningText}>Tindakan ini tidak dapat dibatalkan.</p>
+            <div className={styles.dialogActions}>
+              <button className={styles.quietButton} disabled={deleteLoading} onClick={() => setDeleteProject(null)} type="button">Batal</button>
+              <button className={styles.dangerButton} disabled={deleteLoading} onClick={handleDeleteProject} type="button">
+                {deleteLoading ? "Menghapus..." : "Ya, Hapus Sesi"}
+              </button>
+            </div>
+          </div>
+        )}
+      </NativeDialog>
+
+      {notice && (
+        <div className={styles.toastRegion}>
+          <div className={`${styles.toast} ${notice.isError ? styles.toastError : ""}`} role={notice.isError ? "alert" : "status"} aria-live={notice.isError ? "assertive" : "polite"}>
+            <div>
+              <strong>{notice.title}</strong>
+              <span>{notice.message}</span>
+            </div>
+            <button aria-label="Tutup notifikasi" className={styles.dialogClose} onClick={() => setNotice(null)} type="button">×</button>
+          </div>
+        </div>
+      )}
+    </DashboardLayout>
   );
 }
